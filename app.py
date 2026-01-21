@@ -2603,6 +2603,36 @@ def main_app():
         else:
             st.info("👈 Execute a análise primeiro para ver os resultados.")
 
+#####
+def safe_float(value):
+    """Converte valor para float de forma segura"""
+    try:
+        if isinstance(value, (np.generic, np.ndarray)):
+            return float(value)
+        elif isinstance(value, (int, float)):
+            return float(value)
+        elif pd.isna(value):
+            return np.nan
+        else:
+            return float(value)
+    except:
+        return np.nan
+
+def convert_to_python_types(data):
+    """Converte dados numpy/pandas para tipos Python nativos"""
+    if isinstance(data, pd.DataFrame):
+        return data.applymap(safe_float)
+    elif isinstance(data, pd.Series):
+        return data.apply(safe_float).tolist()
+    elif isinstance(data, np.ndarray):
+        return [safe_float(x) for x in data]
+    elif isinstance(data, list):
+        return [safe_float(x) for x in data]
+    else:
+        return safe_float(data)
+
+
+#####
 def main():
     """Função principal"""
     if not st.session_state.authenticated:
