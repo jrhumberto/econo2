@@ -503,6 +503,8 @@ def merge_files():
                     st.metric("Colunas Numéricas", numeric_cols)
                     st.metric("Colunas Categóricas", df.shape[1] - numeric_cols)
 
+####
+
 def exploratory_analysis():
     """Análise exploratória dos dados"""
     if st.session_state.merged_data is None:
@@ -555,27 +557,37 @@ def exploratory_analysis():
             
             if selected_vars:
                 try:
-                    desc_stats = df[selected_vars].describe().T
+                    # Garantir que estamos trabalhando apenas com dados numéricos
+                    numeric_data = df[selected_vars].apply(pd.to_numeric, errors='coerce')
+                    
+                    desc_stats = numeric_data.describe().T
                     
                     # Adicionar estatísticas adicionais
-                    desc_stats['skewness'] = df[selected_vars].skew()
-                    desc_stats['kurtosis'] = df[selected_vars].kurtosis()
+                    desc_stats['skewness'] = numeric_data.skew()
+                    desc_stats['kurtosis'] = numeric_data.kurtosis()
                     
                     # Calcular CV apenas para variáveis com média não-zero
                     cv_values = []
                     for var in selected_vars:
                         mean_val = desc_stats.loc[var, 'mean']
                         std_val = desc_stats.loc[var, 'std']
-                        if mean_val != 0:
+                        if mean_val != 0 and not pd.isna(mean_val):
                             cv = std_val / mean_val
                         else:
                             cv = np.nan
                         cv_values.append(cv)
                     
                     desc_stats['CV'] = cv_values
-                    desc_stats['missing'] = df[selected_vars].isnull().sum()
+                    desc_stats['missing'] = numeric_data.isnull().sum()
                     
-                    st.dataframe(desc_stats.style.format("{:.4f}"), use_container_width=True)
+                    # Converter todos os valores para tipos Python nativos para exibição
+                    desc_stats_display = desc_stats.copy()
+                    for col in desc_stats_display.columns:
+                        desc_stats_display[col] = desc_stats_display[col].apply(
+                            lambda x: float(x) if isinstance(x, (np.generic, np.ndarray)) else x
+                        )
+                    
+                    st.dataframe(desc_stats_display.style.format("{:.4f}"), use_container_width=True)
                     
                     with st.expander("📖 Explicação das Estatísticas"):
                         st.markdown("""
@@ -636,99 +648,145 @@ def exploratory_analysis():
             
             try:
                 if viz_type == "Histograma":
-                    fig = px.histogram(df, x=x_var, nbins=30, 
-                                      title=f"Distribuição de {x_var}",
-                                      marginal="box")
-                    if len(df[x_var].dropna()) > 0:
-                        mean_val = df[x_var].mean()
-                        fig.add_vline(x=mean_val, line_dash="dash", 
-                                    line_color="red", annotation_text="Média")
+                    # Garantir que os dados são numéricos
+                    x_data = pd.to_numeric(df[x_var], errors='coerce').dropna()
+                    if len(x_data) > 0:
+                        fig = px.histogram(df, x=x_var, nbins=30, 
+                                          title=f"Distribuição de {x_var}",
+                                          marginal="box")
+                        if len(x_data) > 0:
+                            mean_val = float(x_data.mean())
+                            fig.add_vline(x=mean_val, line_dash="dash", 
+                                        line_color="red", annotation_text=f"Média: {mean_val:.2f}")
+                    else:
+                        st.warning(f"Não há dados numéricos válidos para {x_var}")
                     
                 elif viz_type == "Box Plot":
                     fig = px.box(df, y=x_var, title=f"Box Plot de {x_var}")
                     
                 elif viz_type == "Densidade":
-                    data_clean = df[x_var].dropna()
+                    data_clean = pd.to_numeric(df[x_var], errors='coerce').dropna()
                     if len(data_clean) > 0:
+                        # Converter para lista Python para evitar problemas de serialização
+                        data_list = data_clean.tolist()
+                        
                         fig = go.Figure()
                         fig.add_trace(go.Histogram(
-                            x=data_clean,
+                            x=data_list,
                             histnorm='probability density',
                             name='Histograma',
                             opacity=0.7
                         ))
                         
                         # Adicionar curva normal
-                        x_norm = np.linspace(data_clean.min(), data_clean.max(), 100)
-                        y_norm = stats.norm.pdf(x_norm, data_clean.mean(), data_clean.std())
-                        fig.add_trace(go.Scatter(
-                            x=x_norm, y=y_norm,
-                            mode='lines',
-                            name='Distribuição Normal',
-                            line=dict(color='red', width=2)
-                        ))
+                        if len(data_list) > 1:
+                            mean_val = float(np.mean(data_list))
+                            std_val = float(np.std(data_list))
+                            x_norm = np.linspace(min(data_list), max(data_list), 100)
+                            y_norm = stats.norm.pdf(x_norm, mean_val, std_val)
+                            
+                            # Converter para listas Python
+                            x_norm_list = x_norm.tolist()
+                            y_norm_list = y_norm.tolist()
+                            
+                            fig.add_trace(go.Scatter(
+                                x=x_norm_list,
+                                y=y_norm_list,
+                                mode='lines',
+                                name='Distribuição Normal',
+                                line=dict(color='red', width=2)
+                            ))
                         
                         fig.update_layout(title=f"Densidade de {x_var}")
+                    else:
+                        st.warning(f"Não há dados numéricos suficientes para {x_var}")
                     
                 elif viz_type == "Scatter Plot" and y_var is not None:
-                    scatter_data = df[[x_var, y_var]].dropna()
+                    # Garantir que ambas as variáveis são numéricas
+                    scatter_data = df[[x_var, y_var]].apply(pd.to_numeric, errors='coerce').dropna()
                     if len(scatter_data) > 0:
                         fig = px.scatter(scatter_data, x=x_var, y=y_var, 
                                         trendline="ols",
                                         title=f"{x_var} vs {y_var}")
                         # Calcular correlação
                         corr = scatter_data.corr().iloc[0,1]
-                        fig.add_annotation(
-                            text=f"Correlação: {corr:.3f}",
-                            xref="paper", yref="paper",
-                            x=0.05, y=0.95,
-                            showarrow=False,
-                            bgcolor="white"
-                        )
+                        if not pd.isna(corr):
+                            fig.add_annotation(
+                                text=f"Correlação: {float(corr):.3f}",
+                                xref="paper", yref="paper",
+                                x=0.05, y=0.95,
+                                showarrow=False,
+                                bgcolor="white"
+                            )
                     else:
                         st.warning("Não há dados suficientes para o Scatter Plot")
                 
-                if fig:
+                if fig is not None:
                     st.plotly_chart(fig, use_container_width=True)
                     
                     # Interpretação do gráfico
                     with st.expander("📝 Interpretação do Gráfico"):
                         if viz_type == "Histograma":
-                            st.markdown(f"""
-                            **Análise de {x_var}:**
-                            1. **Forma da Distribuição**: {get_distribution_shape(df[x_var])}
-                            2. **Centro**: A maioria dos valores está em torno de {df[x_var].mean():.2f}
-                            3. **Dispersão**: Os valores variam entre {df[x_var].min():.2f} e {df[x_var].max():.2f}
-                            4. **Outliers**: {detect_outliers_text(df[x_var])}
-                            """)
+                            try:
+                                x_data = pd.to_numeric(df[x_var], errors='coerce').dropna()
+                                if len(x_data) > 0:
+                                    st.markdown(f"""
+                                    **Análise de {x_var}:**
+                                    1. **Forma da Distribuição**: {get_distribution_shape(x_data)}
+                                    2. **Centro**: A maioria dos valores está em torno de {float(x_data.mean()):.2f}
+                                    3. **Dispersão**: Os valores variam entre {float(x_data.min()):.2f} e {float(x_data.max()):.2f}
+                                    4. **Outliers**: {detect_outliers_text(x_data)}
+                                    """)
+                            except:
+                                pass
                         elif viz_type == "Scatter Plot" and y_var is not None:
-                            if len(df[[x_var, y_var]].dropna()) > 0:
-                                corr = df[[x_var, y_var]].dropna().corr().iloc[0,1]
-                                st.markdown(f"""
-                                **Relação entre {x_var} e {y_var}:**
-                                1. **Correlação**: {corr:.3f} ({interpret_correlation(corr)})
-                                2. **Direção**: {'Positiva' if corr > 0 else 'Negativa' if corr < 0 else 'Nenhuma'}
-                                3. **Força**: {'Forte' if abs(corr) > 0.7 else 'Moderada' if abs(corr) > 0.3 else 'Fraca'}
-                                """)
+                            try:
+                                scatter_data = df[[x_var, y_var]].apply(pd.to_numeric, errors='coerce').dropna()
+                                if len(scatter_data) > 0:
+                                    corr = scatter_data.corr().iloc[0,1]
+                                    if not pd.isna(corr):
+                                        st.markdown(f"""
+                                        **Relação entre {x_var} e {y_var}:**
+                                        1. **Correlação**: {float(corr):.3f} ({interpret_correlation(corr)})
+                                        2. **Direção**: {'Positiva' if corr > 0 else 'Negativa' if corr < 0 else 'Nenhuma'}
+                                        3. **Força**: {'Forte' if abs(corr) > 0.7 else 'Moderada' if abs(corr) > 0.3 else 'Fraca'}
+                                        """)
+                            except:
+                                pass
             
             except Exception as e:
                 st.error(f"❌ Erro ao gerar gráfico: {e}")
+                import traceback
+                st.code(traceback.format_exc())
     
     with tab_corr:
         st.subheader("Análise de Correlação")
         
         if len(numeric_cols) >= 2:
             try:
+                # Garantir que todas as colunas são numéricas
+                numeric_data = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+                
                 # Matriz de correlação
-                corr_matrix = df[numeric_cols].corr()
+                corr_matrix = numeric_data.corr()
+                
+                # Converter para tipos Python nativos para Plotly
+                corr_matrix_values = corr_matrix.values
+                corr_matrix_list = []
+                for row in corr_matrix_values:
+                    corr_matrix_list.append([float(x) if not pd.isna(x) else 0.0 for x in row])
                 
                 # Heatmap interativo
-                fig = px.imshow(corr_matrix,
+                fig = px.imshow(corr_matrix_list,
+                              x=corr_matrix.columns.tolist(),
+                              y=corr_matrix.index.tolist(),
                               text_auto='.2f',
                               color_continuous_scale='RdBu',
                               zmin=-1, zmax=1,
                               title='Matriz de Correlação',
-                              aspect="auto")
+                              aspect="auto",
+                              labels=dict(x="Variáveis", y="Variáveis", color="Correlação"))
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Análise de multicolinearidade
@@ -743,15 +801,24 @@ def exploratory_analysis():
                 
                 if len(selected_for_vif) >= 2:
                     try:
-                        # Remover valores ausentes
-                        X_clean = df[selected_for_vif].dropna()
-                        if len(X_clean) > 0:
+                        # Remover valores ausentes e garantir dados numéricos
+                        X_clean = df[selected_for_vif].apply(pd.to_numeric, errors='coerce').dropna()
+                        if len(X_clean) > 0 and X_clean.shape[1] == len(selected_for_vif):
                             X_with_const = sm.add_constant(X_clean)
                             vif_data = pd.DataFrame()
-                            vif_data["Variável"] = X_with_const.columns
-                            vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
-                                              for i in range(X_with_const.shape[1])]
-                            vif_data["Tolerância"] = 1 / vif_data["VIF"]
+                            vif_data["Variável"] = X_with_const.columns.tolist()
+                            
+                            # Calcular VIF para cada variável
+                            vif_values = []
+                            for i in range(X_with_const.shape[1]):
+                                try:
+                                    vif = float(variance_inflation_factor(X_with_const.values, i))
+                                except:
+                                    vif = np.nan
+                                vif_values.append(vif)
+                            
+                            vif_data["VIF"] = vif_values
+                            vif_data["Tolerância"] = [1/v if v != 0 and not pd.isna(v) else np.nan for v in vif_values]
                             
                             # Classificar multicolinearidade
                             def classify_vif(vif):
@@ -765,6 +832,12 @@ def exploratory_analysis():
                                     return "✅ Aceitável"
                             
                             vif_data["Classificação"] = vif_data["VIF"].apply(classify_vif)
+                            
+                            # Converter valores para tipos Python nativos
+                            for col in ['VIF', 'Tolerância']:
+                                vif_data[col] = vif_data[col].apply(
+                                    lambda x: float(x) if isinstance(x, (np.generic, np.ndarray)) else x
+                                )
                             
                             st.dataframe(vif_data, use_container_width=True)
                             
@@ -794,8 +867,13 @@ def exploratory_analysis():
                         st.warning(f"Não foi possível calcular VIF: {e}")
             except Exception as e:
                 st.error(f"❌ Erro na análise de correlação: {e}")
+                import traceback
+                st.code(traceback.format_exc())
         else:
             st.warning("⚠️ É necessário pelo menos 2 variáveis numéricas para análise de correlação.")
+
+####
+
 
 def specify_model():
     """Especificação do modelo econométrico"""
