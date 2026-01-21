@@ -565,9 +565,7 @@ def exploratory_analysis():
             dtype_df.columns = ['Tipo', 'Quantidade']
             
             # Converter para tipos serializáveis
-            dtype_df_serializable = convert_to_serializable(dtype_df)
-            
-            fig = px.pie(dtype_df_serializable, values='Quantidade', names='Tipo', 
+            fig = px.pie(dtype_df, values='Quantidade', names='Tipo', 
                         title='Distribuição de Tipos de Dados',
                         hole=0.3)
             st.plotly_chart(fig, use_container_width=True)
@@ -607,14 +605,14 @@ def exploratory_analysis():
                     desc_stats['CV'] = cv_values
                     desc_stats['missing'] = numeric_data.isnull().sum()
                     
-                    # Converter para tipos serializáveis
-                    desc_stats_serializable = desc_stats.copy()
-                    for col in desc_stats_serializable.columns:
-                        desc_stats_serializable[col] = desc_stats_serializable[col].apply(
+                    # Converter para tipos Python nativos para exibição
+                    desc_stats_display = desc_stats.copy()
+                    for col in desc_stats_display.columns:
+                        desc_stats_display[col] = desc_stats_display[col].apply(
                             lambda x: convert_to_serializable(x)
                         )
                     
-                    st.dataframe(desc_stats_serializable.style.format("{:.4f}"), use_container_width=True)
+                    st.dataframe(desc_stats_display.style.format("{:.4f}"), use_container_width=True)
                     
                     with st.expander("📖 Explicação das Estatísticas"):
                         st.markdown("""
@@ -692,8 +690,9 @@ def exploratory_analysis():
                     
                 elif viz_type == "Box Plot":
                     # Converter para lista serializável
-                    y_data = convert_to_serializable(df[x_var].dropna())
-                    fig = px.box(y=y_data, title=f"Box Plot de {x_var}")
+                    y_data = df[x_var].dropna()
+                    y_data_serializable = convert_to_serializable(y_data)
+                    fig = px.box(y=y_data_serializable, title=f"Box Plot de {x_var}")
                     fig.update_layout(yaxis_title=x_var)
                     
                 elif viz_type == "Densidade":
