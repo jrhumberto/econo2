@@ -62,6 +62,32 @@ USERS = {
     "guest": "guest123"
 }
 
+# Função auxiliar para converter dados para tipos Python serializáveis
+def convert_to_serializable(obj):
+    """Converte objetos numpy/pandas para tipos Python nativos serializáveis"""
+    if isinstance(obj, pd.DataFrame):
+        return obj.applymap(lambda x: convert_to_serializable(x)).to_dict('records')
+    elif isinstance(obj, pd.Series):
+        return obj.apply(lambda x: convert_to_serializable(x)).tolist()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, (np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif pd.isna(obj):
+        return None
+    elif isinstance(obj, dict):
+        return {k: convert_to_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_to_serializable(item) for item in obj)
+    else:
+        return obj
+
 # Funções auxiliares para análise exploratória
 def interpret_correlation(corr):
     """Interpreta o valor de correlação"""
@@ -503,27 +529,6 @@ def merge_files():
                     st.metric("Colunas Numéricas", numeric_cols)
                     st.metric("Colunas Categóricas", df.shape[1] - numeric_cols)
 
-def convert_to_python_types(data):
-    """Converte dados numpy/pandas para tipos Python nativos serializáveis"""
-    if isinstance(data, pd.DataFrame):
-        return data.astype(object).where(pd.notnull(data), None).to_dict('records')
-    elif isinstance(data, pd.Series):
-        return data.astype(object).where(pd.notnull(data), None).tolist()
-    elif isinstance(data, np.ndarray):
-        return data.astype(object).tolist()
-    elif isinstance(data, np.generic):
-        return data.item()
-    elif isinstance(data, (int, np.integer)):
-        return int(data)
-    elif isinstance(data, (float, np.floating)):
-        return float(data)
-    elif pd.isna(data):
-        return None
-    else:
-        return data
-
-####
-
 def exploratory_analysis():
     """Análise exploratória dos dados"""
     if st.session_state.merged_data is None:
@@ -559,7 +564,10 @@ def exploratory_analysis():
             dtype_df = pd.DataFrame(df.dtypes.value_counts()).reset_index()
             dtype_df.columns = ['Tipo', 'Quantidade']
             
-            fig = px.pie(dtype_df, values='Quantidade', names='Tipo', 
+            # Converter para tipos serializáveis
+            dtype_df_serializable = convert_to_serializable(dtype_df)
+            
+            fig = px.pie(dtype_df_serializable, values='Quantidade', names='Tipo', 
                         title='Distribuição de Tipos de Dados',
                         hole=0.3)
             st.plotly_chart(fig, use_container_width=True)
@@ -599,14 +607,14 @@ def exploratory_analysis():
                     desc_stats['CV'] = cv_values
                     desc_stats['missing'] = numeric_data.isnull().sum()
                     
-                    # Converter para tipos Python nativos para exibição
-                    desc_stats_display = desc_stats.copy()
-                    for col in desc_stats_display.columns:
-                        desc_stats_display[col] = desc_stats_display[col].apply(
-                            lambda x: float(x) if isinstance(x, (np.generic, np.ndarray)) else x
+                    # Converter para tipos serializáveis
+                    desc_stats_serializable = desc_stats.copy()
+                    for col in desc_stats_serializable.columns:
+                        desc_stats_serializable[col] = desc_stats_serializable[col].apply(
+                            lambda x: convert_to_serializable(x)
                         )
                     
-                    st.dataframe(desc_stats_display.style.format("{:.4f}"), use_container_width=True)
+                    st.dataframe(desc_stats_serializable.style.format("{:.4f}"), use_container_width=True)
                     
                     with st.expander("📖 Explicação das Estatísticas"):
                         st.markdown("""
@@ -670,24 +678,29 @@ def exploratory_analysis():
                     # Garantir que os dados são numéricos
                     x_data = pd.to_numeric(df[x_var], errors='coerce').dropna()
                     if len(x_data) > 0:
-                        fig = px.histogram(df, x=x_var, nbins=30, 
+                        # Converter para lista serializável
+                        x_data_list = convert_to_serializable(x_data)
+                        fig = px.histogram(x=x_data_list, nbins=30, 
                                           title=f"Distribuição de {x_var}",
                                           marginal="box")
-                        if len(x_data) > 0:
-                            mean_val = float(x_data.mean())
+                        if len(x_data_list) > 0:
+                            mean_val = float(np.mean(x_data_list))
                             fig.add_vline(x=mean_val, line_dash="dash", 
                                         line_color="red", annotation_text=f"Média: {mean_val:.2f}")
                     else:
                         st.warning(f"Não há dados numéricos válidos para {x_var}")
                     
                 elif viz_type == "Box Plot":
-                    fig = px.box(df, y=x_var, title=f"Box Plot de {x_var}")
+                    # Converter para lista serializável
+                    y_data = convert_to_serializable(df[x_var].dropna())
+                    fig = px.box(y=y_data, title=f"Box Plot de {x_var}")
+                    fig.update_layout(yaxis_title=x_var)
                     
                 elif viz_type == "Densidade":
                     data_clean = pd.to_numeric(df[x_var], errors='coerce').dropna()
                     if len(data_clean) > 0:
-                        # Converter para lista Python para evitar problemas de serialização
-                        data_list = data_clean.tolist()
+                        # Converter para lista serializável
+                        data_list = convert_to_serializable(data_clean)
                         
                         fig = go.Figure()
                         fig.add_trace(go.Histogram(
@@ -704,9 +717,9 @@ def exploratory_analysis():
                             x_norm = np.linspace(min(data_list), max(data_list), 100)
                             y_norm = stats.norm.pdf(x_norm, mean_val, std_val)
                             
-                            # Converter para listas Python
-                            x_norm_list = x_norm.tolist()
-                            y_norm_list = y_norm.tolist()
+                            # Converter para listas serializáveis
+                            x_norm_list = convert_to_serializable(x_norm)
+                            y_norm_list = convert_to_serializable(y_norm)
                             
                             fig.add_trace(go.Scatter(
                                 x=x_norm_list,
@@ -716,7 +729,7 @@ def exploratory_analysis():
                                 line=dict(color='red', width=2)
                             ))
                         
-                        fig.update_layout(title=f"Densidade de {x_var}")
+                        fig.update_layout(title=f"Densidade de {x_var}", xaxis_title=x_var)
                     else:
                         st.warning(f"Não há dados numéricos suficientes para {x_var}")
                     
@@ -724,7 +737,11 @@ def exploratory_analysis():
                     # Garantir que ambas as variáveis são numéricas
                     scatter_data = df[[x_var, y_var]].apply(pd.to_numeric, errors='coerce').dropna()
                     if len(scatter_data) > 0:
-                        fig = px.scatter(scatter_data, x=x_var, y=y_var, 
+                        # Converter para listas serializáveis
+                        x_list = convert_to_serializable(scatter_data[x_var])
+                        y_list = convert_to_serializable(scatter_data[y_var])
+                        
+                        fig = px.scatter(x=x_list, y=y_list, 
                                         trendline="ols",
                                         title=f"{x_var} vs {y_var}")
                         # Calcular correlação
@@ -775,8 +792,6 @@ def exploratory_analysis():
             
             except Exception as e:
                 st.error(f"❌ Erro ao gerar gráfico: {e}")
-                import traceback
-                st.code(traceback.format_exc())
     
     with tab_corr:
         st.subheader("Análise de Correlação")
@@ -789,19 +804,13 @@ def exploratory_analysis():
                 # Matriz de correlação
                 corr_matrix = numeric_data.corr()
                 
-                # CORREÇÃO: Converter matriz de correlação para lista de listas com valores serializáveis
-                corr_matrix_values = corr_matrix.values
-                corr_matrix_list = []
-                for row in corr_matrix_values:
-                    # Converter cada valor para float Python nativo (não numpy)
-                    corr_matrix_list.append([float(x) if not pd.isna(x) else 0.0 for x in row])
-                
-                # CORREÇÃO: Converter nomes das colunas para lista Python
-                column_names = corr_matrix.columns.tolist()
-                row_names = corr_matrix.index.tolist()
+                # Converter para tipos serializáveis
+                corr_matrix_serializable = convert_to_serializable(corr_matrix.values)
+                column_names = convert_to_serializable(corr_matrix.columns.tolist())
+                row_names = convert_to_serializable(corr_matrix.index.tolist())
                 
                 # Heatmap interativo
-                fig = px.imshow(corr_matrix_list,
+                fig = px.imshow(corr_matrix_serializable,
                               x=column_names,
                               y=row_names,
                               text_auto='.2f',
@@ -857,13 +866,14 @@ def exploratory_analysis():
                             
                             vif_data["Classificação"] = vif_data["VIF"].apply(classify_vif)
                             
-                            # Converter valores para tipos Python nativos
+                            # Converter valores para tipos serializáveis
+                            vif_data_serializable = vif_data.copy()
                             for col in ['VIF', 'Tolerância']:
-                                vif_data[col] = vif_data[col].apply(
-                                    lambda x: float(x) if isinstance(x, (np.generic, np.ndarray)) else x
+                                vif_data_serializable[col] = vif_data_serializable[col].apply(
+                                    lambda x: convert_to_serializable(x)
                                 )
                             
-                            st.dataframe(vif_data, use_container_width=True)
+                            st.dataframe(vif_data_serializable, use_container_width=True)
                             
                             # Explicação do VIF
                             with st.expander("📖 O que é VIF e como interpretar?"):
@@ -891,13 +901,8 @@ def exploratory_analysis():
                         st.warning(f"Não foi possível calcular VIF: {e}")
             except Exception as e:
                 st.error(f"❌ Erro na análise de correlação: {e}")
-                import traceback
-                st.code(traceback.format_exc())
         else:
             st.warning("⚠️ É necessário pelo menos 2 variáveis numéricas para análise de correlação.")
-
-####
-
 
 def specify_model():
     """Especificação do modelo econométrico"""
@@ -1158,7 +1163,6 @@ def run_analysis():
                     
             except Exception as e:
                 st.error(f"❌ Erro durante a análise: {str(e)}")
-                st.exception(e)
 
 def perform_econometric_analysis():
     """Executar a análise econométrica completa"""
@@ -1294,14 +1298,14 @@ def perform_jarque_bera(residuals):
     """Executar teste de Jarque-Bera"""
     try:
         if len(residuals) > 0:
-            # CORREÇÃO: jarque_bera retorna 4 valores, não 2
+            # jarque_bera retorna 4 valores
             jb_value, p_value, skewness, kurtosis = jarque_bera(residuals)
             return {
-                'statistic': float(jb_value),
-                'p_value': float(p_value),
+                'statistic': convert_to_serializable(jb_value),
+                'p_value': convert_to_serializable(p_value),
                 'conclusion': 'Normal' if p_value > 0.05 else 'Não normal',
-                'skewness': float(skewness) if len(residuals) > 0 else np.nan,
-                'kurtosis': float(kurtosis) if len(residuals) > 0 else np.nan
+                'skewness': convert_to_serializable(skewness),
+                'kurtosis': convert_to_serializable(kurtosis)
             }
         else:
             return {'error': 'Sem dados para o teste'}
@@ -1314,8 +1318,8 @@ def perform_shapiro_wilk(residuals):
         if len(residuals) <= 5000 and len(residuals) > 3:
             stat, p_value = shapiro(residuals)
             return {
-                'statistic': float(stat),
-                'p_value': float(p_value),
+                'statistic': convert_to_serializable(stat),
+                'p_value': convert_to_serializable(p_value),
                 'conclusion': 'Normal' if p_value > 0.05 else 'Não normal'
             }
         elif len(residuals) <= 3:
@@ -1331,9 +1335,9 @@ def perform_anderson_darling(residuals):
         if len(residuals) > 0:
             result = anderson(residuals, dist='norm')
             return {
-                'statistic': float(result.statistic),
-                'critical_values': result.critical_values.tolist(),
-                'significance_levels': result.significance_level.tolist()
+                'statistic': convert_to_serializable(result.statistic),
+                'critical_values': convert_to_serializable(result.critical_values),
+                'significance_levels': convert_to_serializable(result.significance_level)
             }
         else:
             return {'error': 'Sem dados para o teste'}
@@ -1345,10 +1349,10 @@ def perform_breusch_pagan(model, X, residuals):
     try:
         lm, lm_p_value, fvalue, f_p_value = het_breuschpagan(residuals, X)
         return {
-            'lm_statistic': float(lm),
-            'lm_p_value': float(lm_p_value),
-            'f_statistic': float(fvalue),
-            'f_p_value': float(f_p_value),
+            'lm_statistic': convert_to_serializable(lm),
+            'lm_p_value': convert_to_serializable(lm_p_value),
+            'f_statistic': convert_to_serializable(fvalue),
+            'f_p_value': convert_to_serializable(f_p_value),
             'conclusion': 'Homocedástico' if lm_p_value > 0.05 else 'Heterocedástico'
         }
     except Exception as e:
@@ -1359,10 +1363,10 @@ def perform_white_test(model, X, residuals):
     try:
         lm, lm_p_value, fvalue, f_p_value = het_white(residuals, X)
         return {
-            'lm_statistic': float(lm),
-            'lm_p_value': float(lm_p_value),
-            'f_statistic': float(fvalue),
-            'f_p_value': float(f_p_value),
+            'lm_statistic': convert_to_serializable(lm),
+            'lm_p_value': convert_to_serializable(lm_p_value),
+            'f_statistic': convert_to_serializable(fvalue),
+            'f_p_value': convert_to_serializable(f_p_value),
             'conclusion': 'Homocedástico' if lm_p_value > 0.05 else 'Heterocedástico'
         }
     except Exception as e:
@@ -1371,11 +1375,11 @@ def perform_white_test(model, X, residuals):
 def perform_goldfeld_quandt(y, X):
     """Executar teste de Goldfeld-Quandt"""
     try:
-        # CORREÇÃO: het_goldfeldquandt retorna 3 valores, não 2
+        # het_goldfeldquandt retorna 3 valores
         stat, p_value, order = het_goldfeldquandt(y, X)
         return {
-            'statistic': float(stat),
-            'p_value': float(p_value),
+            'statistic': convert_to_serializable(stat),
+            'p_value': convert_to_serializable(p_value),
             'conclusion': 'Homocedástico' if p_value > 0.05 else 'Heterocedástico'
         }
     except Exception as e:
@@ -1395,7 +1399,7 @@ def perform_durbin_watson(residuals):
                 interpretation = "Sem autocorrelação significativa"
             
             return {
-                'statistic': float(stat),
+                'statistic': convert_to_serializable(stat),
                 'interpretation': interpretation
             }
         else:
@@ -1408,8 +1412,8 @@ def perform_breusch_godfrey(model, X, residuals):
     try:
         bg_test = acorr_breusch_godfrey(model, nlags=2)
         return {
-            'lm_statistic': float(bg_test[0]),
-            'p_value': float(bg_test[1]),
+            'lm_statistic': convert_to_serializable(bg_test[0]),
+            'p_value': convert_to_serializable(bg_test[1]),
             'conclusion': 'Sem autocorrelação' if bg_test[1] > 0.05 else 'Com autocorrelação'
         }
     except Exception as e:
@@ -1422,8 +1426,8 @@ def perform_ljung_box(residuals):
         if len(residuals) > 0:
             result = acorr_ljungbox(residuals, lags=[5], return_df=True)
             return {
-                'statistic': float(result['lb_stat'].iloc[0]),
-                'p_value': float(result['lb_pvalue'].iloc[0]),
+                'statistic': convert_to_serializable(result['lb_stat'].iloc[0]),
+                'p_value': convert_to_serializable(result['lb_pvalue'].iloc[0]),
                 'conclusion': 'Sem autocorrelação' if result['lb_pvalue'].iloc[0] > 0.05 else 'Com autocorrelação'
             }
         else:
@@ -1452,8 +1456,8 @@ def calculate_vif(X):
                 
                 vif_data.append({
                     'variable': col,
-                    'vif': float(vif) if not pd.isna(vif) else np.nan,
-                    'tolerance': float(tolerance) if not pd.isna(vif) else np.nan,
+                    'vif': convert_to_serializable(vif),
+                    'tolerance': convert_to_serializable(tolerance),
                     'classification': classification
                 })
         
@@ -1476,7 +1480,7 @@ def calculate_condition_number(X):
                 interpretation = "Aceitável"
             
             return {
-                'condition_number': float(cond_num),
+                'condition_number': convert_to_serializable(cond_num),
                 'interpretation': interpretation
             }
         else:
@@ -1504,8 +1508,8 @@ def perform_ramsey_reset(model, X, y):
         p_value = 1 - stats.f.cdf(f_stat, 2, df_unrestricted)
         
         return {
-            'f_statistic': float(f_stat),
-            'p_value': float(p_value),
+            'f_statistic': convert_to_serializable(f_stat),
+            'p_value': convert_to_serializable(p_value),
             'conclusion': 'Bem especificado' if p_value > 0.05 else 'Mal especificado'
         }
     except Exception as e:
@@ -1516,8 +1520,8 @@ def perform_harvey_collier(model):
     try:
         t_stat, p_value = linear_harvey_collier(model)
         return {
-            't_statistic': float(t_stat),
-            'p_value': float(p_value),
+            't_statistic': convert_to_serializable(t_stat),
+            'p_value': convert_to_serializable(p_value),
             'conclusion': 'Linear' if p_value > 0.05 else 'Não linear'
         }
     except Exception as e:
@@ -1530,9 +1534,9 @@ def perform_adf_test(y):
         if len(y_clean) > 0:
             result = adfuller(y_clean)
             return {
-                'adf_statistic': float(result[0]),
-                'p_value': float(result[1]),
-                'critical_values': {k: float(v) for k, v in result[4].items()},
+                'adf_statistic': convert_to_serializable(result[0]),
+                'p_value': convert_to_serializable(result[1]),
+                'critical_values': {k: convert_to_serializable(v) for k, v in result[4].items()},
                 'conclusion': 'Estacionária' if result[1] < 0.05 else 'Não estacionária'
             }
         else:
@@ -1547,9 +1551,9 @@ def perform_kpss_test(y):
         if len(y_clean) > 0:
             result = kpss(y_clean, regression='c')
             return {
-                'kpss_statistic': float(result[0]),
-                'p_value': float(result[1]),
-                'critical_values': {k: float(v) for k, v in result[3].items()},
+                'kpss_statistic': convert_to_serializable(result[0]),
+                'p_value': convert_to_serializable(result[1]),
+                'critical_values': {k: convert_to_serializable(v) for k, v in result[3].items()},
                 'conclusion': 'Estacionária' if result[1] > 0.05 else 'Não estacionária'
             }
         else:
@@ -1579,14 +1583,14 @@ def calculate_performance_metrics(y, y_pred, model):
         llf = model.llf if hasattr(model, 'llf') else None
         
         return {
-            'mae': float(mae),
-            'rmse': float(rmse),
-            'mape': float(mape) if not np.isnan(mape) else None,
-            'r_squared': float(r_squared) if r_squared else None,
-            'r_squared_adj': float(r_squared_adj) if r_squared_adj else None,
-            'aic': float(aic) if aic else None,
-            'bic': float(bic) if bic else None,
-            'log_likelihood': float(llf) if llf else None
+            'mae': convert_to_serializable(mae),
+            'rmse': convert_to_serializable(rmse),
+            'mape': convert_to_serializable(mape),
+            'r_squared': convert_to_serializable(r_squared),
+            'r_squared_adj': convert_to_serializable(r_squared_adj),
+            'aic': convert_to_serializable(aic),
+            'bic': convert_to_serializable(bic),
+            'log_likelihood': convert_to_serializable(llf)
         }
     except Exception as e:
         return {'error': str(e)}
@@ -1987,15 +1991,19 @@ def display_visualizations(results):
     )
     
     if viz_type == "Resíduos vs Ajustados":
+        # Converter para tipos serializáveis
+        y_pred_serializable = convert_to_serializable(results['y_pred'])
+        residuals_serializable = convert_to_serializable(results['residuals'])
+        
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=results['y_pred'].tolist() if hasattr(results['y_pred'], 'tolist') else results['y_pred'],
-            y=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
+            x=y_pred_serializable,
+            y=residuals_serializable,
             mode='markers',
             name='Resíduos',
             marker=dict(
                 size=8,
-                color=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
+                color=residuals_serializable,
                 colorscale='RdBu',
                 showscale=True,
                 colorbar=dict(title="Resíduo")
@@ -2035,8 +2043,11 @@ def display_visualizations(results):
             """)
     
     elif viz_type == "QQ-Plot dos Resíduos":
+        # Converter para tipos serializáveis
+        residuals_serializable = convert_to_serializable(results['residuals'])
+        
         # QQ-Plot
-        sorted_residuals = np.sort(results['residuals'])
+        sorted_residuals = np.sort(residuals_serializable)
         theoretical_quantiles = stats.norm.ppf(
             np.linspace(0.01, 0.99, len(sorted_residuals))
         )
@@ -2096,6 +2107,9 @@ def display_visualizations(results):
             """)
     
     elif viz_type == "Distribuição dos Resíduos":
+        # Converter para tipos serializáveis
+        residuals_serializable = convert_to_serializable(results['residuals'])
+        
         fig = make_subplots(
             rows=1, cols=2,
             subplot_titles=('Histograma dos Resíduos', 'Densidade dos Resíduos')
@@ -2104,7 +2118,7 @@ def display_visualizations(results):
         # Histograma
         fig.add_trace(
             go.Histogram(
-                x=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
+                x=residuals_serializable,
                 nbinsx=30,
                 name='Resíduos',
                 marker_color='lightblue',
@@ -2114,9 +2128,9 @@ def display_visualizations(results):
         )
         
         # Adicionar curva normal
-        if len(results['residuals']) > 0:
-            x_norm = np.linspace(results['residuals'].min(), results['residuals'].max(), 100)
-            y_norm = stats.norm.pdf(x_norm, results['residuals'].mean(), results['residuals'].std())
+        if len(residuals_serializable) > 0:
+            x_norm = np.linspace(min(residuals_serializable), max(residuals_serializable), 100)
+            y_norm = stats.norm.pdf(x_norm, np.mean(residuals_serializable), np.std(residuals_serializable))
             
             fig.add_trace(
                 go.Scatter(
@@ -2132,7 +2146,7 @@ def display_visualizations(results):
         # Densidade
         fig.add_trace(
             go.Histogram(
-                x=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
+                x=residuals_serializable,
                 histnorm='probability density',
                 nbinsx=30,
                 name='Densidade',
@@ -2142,7 +2156,7 @@ def display_visualizations(results):
             row=1, col=2
         )
         
-        if len(results['residuals']) > 0:
+        if len(residuals_serializable) > 0:
             fig.add_trace(
                 go.Scatter(
                     x=x_norm.tolist(),
@@ -2163,18 +2177,22 @@ def display_visualizations(results):
         st.plotly_chart(fig, use_container_width=True)
     
     elif viz_type == "Valores Ajustados vs Reais":
+        # Converter para tipos serializáveis
+        y_serializable = convert_to_serializable(results['y'])
+        y_pred_serializable = convert_to_serializable(results['y_pred'])
+        
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=results['y'].tolist() if hasattr(results['y'], 'tolist') else results['y'],
-            y=results['y_pred'].tolist() if hasattr(results['y_pred'], 'tolist') else results['y_pred'],
+            x=y_serializable,
+            y=y_pred_serializable,
             mode='markers',
             name='Observações',
             marker=dict(size=8, opacity=0.6)
         ))
         
         # Linha y = x (prefeito ajuste)
-        min_val = min(results['y'].min(), results['y_pred'].min())
-        max_val = max(results['y'].max(), results['y_pred'].max())
+        min_val = min(min(y_serializable), min(y_pred_serializable))
+        max_val = max(max(y_serializable), max(y_pred_serializable))
         fig.add_trace(go.Scatter(
             x=[min_val, max_val],
             y=[min_val, max_val],
@@ -2351,8 +2369,6 @@ def display_export_options(results):
                 
             except Exception as e:
                 st.error(f"❌ Erro ao gerar PDF: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
     
     with col_exp2:
         st.markdown("### 📊 Dados e Resultados")
@@ -2379,9 +2395,9 @@ def display_export_options(results):
         
         # Exportar dados de previsão
         pred_df = pd.DataFrame({
-            'Y_Real': results['y'].tolist() if hasattr(results['y'], 'tolist') else results['y'],
-            'Y_Predito': results['y_pred'].tolist() if hasattr(results['y_pred'], 'tolist') else results['y_pred'],
-            'Resíduo': results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals']
+            'Y_Real': convert_to_serializable(results['y']),
+            'Y_Predito': convert_to_serializable(results['y_pred']),
+            'Resíduo': convert_to_serializable(results['residuals'])
         })
         
         csv_pred = pred_df.to_csv(index=False)
