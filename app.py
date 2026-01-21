@@ -556,8 +556,13 @@ def exploratory_analysis():
             st.write(f"- **Valores Ausentes:** {df.isnull().sum().sum():,}")
         
         with col_info2:
-            dtype_df = pd.DataFrame(df.dtypes.value_counts()).reset_index()
+            # Obter a contagem de tipos de dados, convertendo os tipos para string
+            dtype_counts = df.dtypes.astype(str).value_counts()
+            dtype_df = pd.DataFrame(dtype_counts).reset_index()
             dtype_df.columns = ['Tipo', 'Quantidade']
+            
+            # Garantir que os valores são números inteiros
+            dtype_df['Quantidade'] = dtype_df['Quantidade'].astype(int)
             
             fig = px.pie(dtype_df, values='Quantidade', names='Tipo', 
                         title='Distribuição de Tipos de Dados',
@@ -2124,7 +2129,7 @@ def display_visualizations(results):
                     name='Normal',
                     line=dict(color='red', width=2)
                 ),
-                row=1, col=1
+            row=1, col=1
             )
         
         # Densidade
