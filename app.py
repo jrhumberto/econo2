@@ -503,6 +503,25 @@ def merge_files():
                     st.metric("Colunas Numéricas", numeric_cols)
                     st.metric("Colunas Categóricas", df.shape[1] - numeric_cols)
 
+def convert_to_python_types(data):
+    """Converte dados numpy/pandas para tipos Python nativos serializáveis"""
+    if isinstance(data, pd.DataFrame):
+        return data.astype(object).where(pd.notnull(data), None).to_dict('records')
+    elif isinstance(data, pd.Series):
+        return data.astype(object).where(pd.notnull(data), None).tolist()
+    elif isinstance(data, np.ndarray):
+        return data.astype(object).tolist()
+    elif isinstance(data, np.generic):
+        return data.item()
+    elif isinstance(data, (int, np.integer)):
+        return int(data)
+    elif isinstance(data, (float, np.floating)):
+        return float(data)
+    elif pd.isna(data):
+        return None
+    else:
+        return data
+
 ####
 
 def exploratory_analysis():
@@ -580,7 +599,7 @@ def exploratory_analysis():
                     desc_stats['CV'] = cv_values
                     desc_stats['missing'] = numeric_data.isnull().sum()
                     
-                    # Converter todos os valores para tipos Python nativos para exibição
+                    # Converter para tipos Python nativos para exibição
                     desc_stats_display = desc_stats.copy()
                     for col in desc_stats_display.columns:
                         desc_stats_display[col] = desc_stats_display[col].apply(
@@ -770,16 +789,21 @@ def exploratory_analysis():
                 # Matriz de correlação
                 corr_matrix = numeric_data.corr()
                 
-                # Converter para tipos Python nativos para Plotly
+                # CORREÇÃO: Converter matriz de correlação para lista de listas com valores serializáveis
                 corr_matrix_values = corr_matrix.values
                 corr_matrix_list = []
                 for row in corr_matrix_values:
+                    # Converter cada valor para float Python nativo (não numpy)
                     corr_matrix_list.append([float(x) if not pd.isna(x) else 0.0 for x in row])
+                
+                # CORREÇÃO: Converter nomes das colunas para lista Python
+                column_names = corr_matrix.columns.tolist()
+                row_names = corr_matrix.index.tolist()
                 
                 # Heatmap interativo
                 fig = px.imshow(corr_matrix_list,
-                              x=corr_matrix.columns.tolist(),
-                              y=corr_matrix.index.tolist(),
+                              x=column_names,
+                              y=row_names,
                               text_auto='.2f',
                               color_continuous_scale='RdBu',
                               zmin=-1, zmax=1,
@@ -1066,9 +1090,6 @@ def specify_model():
                 st.write(f"- Outliers: {spec['outlier_treatment']}")
                 
                 st.write(f"\n**Especificado em:** {spec['timestamp']}")
-
-# As funções restantes permanecem as mesmas do código anterior...
-# (run_analysis, perform_econometric_analysis, run_all_diagnostic_tests, etc.)
 
 def run_analysis():
     """Executar análise econométrica completa"""
@@ -1966,13 +1987,13 @@ def display_visualizations(results):
     if viz_type == "Resíduos vs Ajustados":
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=results['y_pred'],
-            y=results['residuals'],
+            x=results['y_pred'].tolist() if hasattr(results['y_pred'], 'tolist') else results['y_pred'],
+            y=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
             mode='markers',
             name='Resíduos',
             marker=dict(
                 size=8,
-                color=results['residuals'],
+                color=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
                 colorscale='RdBu',
                 showscale=True,
                 colorbar=dict(title="Resíduo")
@@ -2020,8 +2041,8 @@ def display_visualizations(results):
         
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=theoretical_quantiles,
-            y=sorted_residuals,
+            x=theoretical_quantiles.tolist(),
+            y=sorted_residuals.tolist(),
             mode='markers',
             name='Resíduos',
             marker=dict(size=8)
@@ -2081,7 +2102,7 @@ def display_visualizations(results):
         # Histograma
         fig.add_trace(
             go.Histogram(
-                x=results['residuals'],
+                x=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
                 nbinsx=30,
                 name='Resíduos',
                 marker_color='lightblue',
@@ -2097,8 +2118,8 @@ def display_visualizations(results):
             
             fig.add_trace(
                 go.Scatter(
-                    x=x_norm,
-                    y=y_norm * len(results['residuals']) * (results['residuals'].ptp() / 30),
+                    x=x_norm.tolist(),
+                    y=y_norm.tolist(),
                     mode='lines',
                     name='Normal',
                     line=dict(color='red', width=2)
@@ -2109,7 +2130,7 @@ def display_visualizations(results):
         # Densidade
         fig.add_trace(
             go.Histogram(
-                x=results['residuals'],
+                x=results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals'],
                 histnorm='probability density',
                 nbinsx=30,
                 name='Densidade',
@@ -2122,8 +2143,8 @@ def display_visualizations(results):
         if len(results['residuals']) > 0:
             fig.add_trace(
                 go.Scatter(
-                    x=x_norm,
-                    y=y_norm,
+                    x=x_norm.tolist(),
+                    y=y_norm.tolist(),
                     mode='lines',
                     name='Normal',
                     line=dict(color='red', width=2)
@@ -2142,8 +2163,8 @@ def display_visualizations(results):
     elif viz_type == "Valores Ajustados vs Reais":
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=results['y'],
-            y=results['y_pred'],
+            x=results['y'].tolist() if hasattr(results['y'], 'tolist') else results['y'],
+            y=results['y_pred'].tolist() if hasattr(results['y_pred'], 'tolist') else results['y_pred'],
             mode='markers',
             name='Observações',
             marker=dict(size=8, opacity=0.6)
@@ -2189,7 +2210,7 @@ def display_visualizations(results):
                 p_value = results['model'].pvalues[var]
                 importance_data.append({
                     'Variável': var,
-                    '|t-stat|': t_abs,
+                    '|t-stat|': float(t_abs),
                     'Significância': '***' if p_value < 0.001 else '**' if p_value < 0.01 else '*' if p_value < 0.05 else '.' if p_value < 0.1 else ''
                 })
         
@@ -2268,9 +2289,9 @@ def display_export_options(results):
         
         # Exportar dados de previsão
         pred_df = pd.DataFrame({
-            'Y_Real': results['y'],
-            'Y_Predito': results['y_pred'],
-            'Resíduo': results['residuals']
+            'Y_Real': results['y'].tolist() if hasattr(results['y'], 'tolist') else results['y'],
+            'Y_Predito': results['y_pred'].tolist() if hasattr(results['y_pred'], 'tolist') else results['y_pred'],
+            'Resíduo': results['residuals'].tolist() if hasattr(results['residuals'], 'tolist') else results['residuals']
         })
         
         csv_pred = pred_df.to_csv(index=False)
@@ -2338,6 +2359,8 @@ def generate_pdf_report(results):
     pdf.cell(0, 10, f"Variáveis independentes (X): {', '.join(spec['x_vars'])}", ln=True)
     pdf.cell(0, 10, f"Tipo de modelo: {spec['model_type']}", ln=True)
     pdf.cell(0, 10, f"Nível de confiança: {spec['confidence_level']*100}%", ln=True)
+    pdf.cell(0, 10, f"Hipótese nula (H₀): {spec['hypotheses']['null']}", ln=True)
+    pdf.cell(0, 10, f"Hipótese alternativa (H₁): {spec['hypotheses']['alternative']}", ln=True)
     pdf.ln(5)
     
     # Seção 2: Resultados do Modelo
@@ -2681,36 +2704,6 @@ def main_app():
         else:
             st.info("👈 Execute a análise primeiro para ver os resultados.")
 
-#####
-def safe_float(value):
-    """Converte valor para float de forma segura"""
-    try:
-        if isinstance(value, (np.generic, np.ndarray)):
-            return float(value)
-        elif isinstance(value, (int, float)):
-            return float(value)
-        elif pd.isna(value):
-            return np.nan
-        else:
-            return float(value)
-    except:
-        return np.nan
-
-def convert_to_python_types(data):
-    """Converte dados numpy/pandas para tipos Python nativos"""
-    if isinstance(data, pd.DataFrame):
-        return data.applymap(safe_float)
-    elif isinstance(data, pd.Series):
-        return data.apply(safe_float).tolist()
-    elif isinstance(data, np.ndarray):
-        return [safe_float(x) for x in data]
-    elif isinstance(data, list):
-        return [safe_float(x) for x in data]
-    else:
-        return safe_float(data)
-
-
-#####
 def main():
     """Função principal"""
     if not st.session_state.authenticated:
