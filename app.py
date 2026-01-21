@@ -2313,143 +2313,12 @@ def clean_text_for_pdf(text):
         '🎓': '[GRADUATION]',
         '💼': '[BRIEFCASE]',
         '🛒': '[SHOPPING]',
-        '🍎': '[APPLE]',
-        '🍊': '[ORANGE]',
-        '🍌': '[BANANA]',
-        '🍇': '[GRAPES]',
-        '🍓': '[STRAWBERRY]',
-        '🍉': '[WATERMELON]',
-        '🥑': '[AVOCADO]',
-        '🥦': '[BROCCOLI]',
-        '🥕': '[CARROT]',
-        '🌽': '[CORN]',
-        '🍞': '[BREAD]',
-        '🥐': '[CROISSANT]',
-        '🥞': '[PANCAKE]',
-        '🍳': '[COOKING]',
-        '☕': '[COFFEE]',
-        '🍵': '[TEA]',
-        '🥤': '[DRINK]',
-        '🍺': '[BEER]',
-        '🍷': '[WINE]',
-        '🍸': '[COCKTAIL]',
-        '🍹': '[TROPICAL]',
-        '🍾': '[CHAMPAGNE]',
-        '🎂': '[CAKE]',
-        '🍪': '[COOKIE]',
-        '🍫': '[CHOCOLATE]',
-        '🍬': '[CANDY]',
-        '🍭': '[LOLLIPOP]',
-        '🎁': '[GIFT]',
-        '🎄': '[CHRISTMAS]',
-        '🎃': '[HALLOWEEN]',
-        '🎉': '[PARTY]',
-        '🎊': '[CONFETTI]',
-        '🎈': '[BALLOON]',
-        '🎀': '[RIBBON]',
-        '🎎': '[DOLLS]',
-        '🎐': '[WINDCHIME]',
-        '🎌': '[FLAGS]',
-        '🏮': '[LANTERN]',
-        '💝': '[HEART BOX]',
-        '💘': '[HEART ARROW]',
-        '💖': '[SPARKLING HEART]',
-        '💗': '[GROWING HEART]',
-        '💓': '[BEATING HEART]',
-        '💞': '[REVOLVING HEARTS]',
-        '💕': '[TWO HEARTS]',
-        '💟': '[HEART DECORATION]',
-        '❣️': '[HEART EXCLAMATION]',
-        '💔': '[BROKEN HEART]',
-        '❤️': '[RED HEART]',
-        '🧡': '[ORANGE HEART]',
-        '💛': '[YELLOW HEART]',
-        '💚': '[GREEN HEART]',
-        '💙': '[BLUE HEART]',
-        '💜': '[PURPLE HEART]',
-        '🖤': '[BLACK HEART]',
-        '🤍': '[WHITE HEART]',
-        '🤎': '[BROWN HEART]',
-        '💯': '[100 POINTS]',
-        '🔟': '[KEYCAP 10]',
-        '🔢': '[INPUT NUMBERS]',
-        '#️⃣': '[HASHTAG]',
-        '*️⃣': '[ASTERISK]',
-        '0️⃣': '[KEYCAP 0]',
-        '1️⃣': '[KEYCAP 1]',
-        '2️⃣': '[KEYCAP 2]',
-        '3️⃣': '[KEYCAP 3]',
-        '4️⃣': '[KEYCAP 4]',
-        '5️⃣': '[KEYCAP 5]',
-        '6️⃣': '[KEYCAP 6]',
-        '7️⃣': '[KEYCAP 7]',
-        '8️⃣': '[KEYCAP 8]',
-        '9️⃣': '[KEYCAP 9]',
-        '🔠': '[INPUT LATIN UPPERCASE]',
-        '🔡': '[INPUT LATIN LOWERCASE]',
-        '🔤': '[INPUT LATIN LETTERS]',
-        '🆎': '[AB BUTTON]',
-        '🆑': '[CL BUTTON]',
-        '🆒': '[COOL BUTTON]',
-        '🆓': '[FREE BUTTON]',
-        'ℹ️': '[INFORMATION]',
-        '🆔': '[ID BUTTON]',
-        '🆕': '[NEW BUTTON]',
-        '🆖': '[NG BUTTON]',
-        '🆗': '[OK BUTTON]',
-        '🆘': '[SOS BUTTON]',
-        '🆙': '[UP! BUTTON]',
-        '🆚': '[VS BUTTON]',
-        '🈁': '[JAPANESE HERE BUTTON]',
-        '🈂️': '[JAPANESE SERVICE CHARGE BUTTON]',
-        '🈷️': '[JAPANESE MONTHLY AMOUNT BUTTON]',
-        '🈶': '[JAPANESE NOT FREE OF CHARGE BUTTON]',
-        '🈯': '[JAPANESE RESERVED BUTTON]',
-        '🉐': '[JAPANESE BARGAIN BUTTON]',
-        '🈹': '[JAPANESE DISCOUNT BUTTON]',
-        '🈚': '[JAPANESE FREE OF CHARGE BUTTON]',
-        '🈲': '[JAPANESE PROHIBITED BUTTON]',
-        '🉑': '[JAPANESE ACCEPTABLE BUTTON]',
-        '🈸': '[JAPANESE APPLICATION BUTTON]',
-        '🈴': '[JAPANESE PASSING GRADE BUTTON]',
-        '🈳': '[JAPANESE VACANCY BUTTON]',
-        '㊗️': '[JAPANESE CONGRATULATIONS BUTTON]',
-        '㊙️': '[JAPANESE SECRET BUTTON]',
-        '🈺': '[JAPANESE OPEN FOR BUSINESS BUTTON]',
-        '🈵': '[JAPANESE NO VACANCY BUTTON]',
-        '▪️': '[BLACK SMALL SQUARE]',
-        '▫️': '[WHITE SMALL SQUARE]',
-        '◾': '[BLACK MEDIUM SMALL SQUARE]',
-        '◽': '[WHITE MEDIUM SMALL SQUARE]',
-        '⬛': '[BLACK LARGE SQUARE]',
-        '⬜': '[WHITE LARGE SQUARE]',
-        '🔶': '[LARGE ORANGE DIAMOND]',
-        '🔷': '[LARGE BLUE DIAMOND]',
-        '🔸': '[SMALL ORANGE DIAMOND]',
-        '🔹': '[SMALL BLUE DIAMOND]',
-        '🔺': '[RED TRIANGLE POINTED UP]',
-        '🔻': '[RED TRIANGLE POINTED DOWN]',
-        '💠': '[DIAMOND WITH A DOT]',
-        '🔘': '[RADIO BUTTON]',
-        '🔳': '[WHITE SQUARE BUTTON]',
-        '🔲': '[BLACK SQUARE BUTTON]',
-        '🏁': '[CHEQUERED FLAG]',
-        '🚩': '[TRIANGULAR FLAG]',
-        '🎌': '[CROSSED FLAGS]',
-        '🏴': '[BLACK FLAG]',
-        '🏳️': '[WHITE FLAG]',
-        '🏳️‍🌈': '[RAINBOW FLAG]',
-        '🏴‍☠️': '[PIRATE FLAG]',
-        '🇦🇨': '[ASCENSION ISLAND]',
-        '🇦🇩': '[ANDORRA]',
-        '🇦🇪': '[UNITED ARAB EMIRATES]',
-        '🇦🇫': '[AFGHANISTAN]',
     }
     
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     
-    # Remover outros caracteres não-ASCII
+    # Remover outros caracteres não-ASCII mantendo acentos portugueses
     return ''.join(char for char in text if ord(char) < 128 or char in 'áàãâéèêíìîóòõôúùûçÁÀÃÂÉÈÊÍÌÎÓÒÕÔÚÙÛÇ')
 
 def display_export_options(results):
@@ -2632,7 +2501,6 @@ def generate_pdf_report(results):
     pdf.set_font("Arial", "", 12)
     
     # Resumo dos testes
-    test_summary = []
     for category_name, tests in results['test_results'].items():
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, clean_text_for_pdf(category_name + ":"), ln=True)
@@ -2879,4 +2747,58 @@ def main_app():
     
     # Menu de navegação
     menu_options = [
-        "📤 Upload
+        "📤 Upload de Dados",
+        "🔄 Merge de Arquivos",
+        "🔍 Análise Exploratória",
+        "⚙️ Especificar Modelo",
+        "🔬 Executar Análise",
+        "📊 Resultados"
+    ]
+    
+    selected_menu = st.sidebar.radio("Navegação", menu_options)
+    
+    # Status atual
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📊 Status Atual")
+    
+    if st.session_state.merged_data is not None:
+        st.sidebar.success(f"✅ Dados: {st.session_state.merged_data.shape[0]:,}×{st.session_state.merged_data.shape[1]}")
+    else:
+        st.sidebar.warning("⚠️ Sem dados")
+    
+    if st.session_state.model_spec:
+        st.sidebar.info(f"⚙️ Modelo: {st.session_state.model_spec.get('model_type', 'Não especificado')}")
+        st.sidebar.write(f"Y: {st.session_state.model_spec.get('y_var', '—')}")
+    
+    if st.session_state.analysis_results:
+        st.sidebar.success(f"📈 Análise: Concluída")
+        r2 = st.session_state.analysis_results['performance']['r_squared']
+        if r2 is not None:
+            st.sidebar.metric("R²", f"{r2:.3f}")
+    
+    # Executar página selecionada
+    if selected_menu == "📤 Upload de Dados":
+        upload_files()
+    elif selected_menu == "🔄 Merge de Arquivos":
+        merge_files()
+    elif selected_menu == "🔍 Análise Exploratória":
+        exploratory_analysis()
+    elif selected_menu == "⚙️ Especificar Modelo":
+        specify_model()
+    elif selected_menu == "🔬 Executar Análise":
+        run_analysis()
+    elif selected_menu == "📊 Resultados":
+        if st.session_state.analysis_results:
+            display_results()
+        else:
+            st.info("👈 Execute a análise primeiro para ver os resultados.")
+
+def main():
+    """Função principal"""
+    if not st.session_state.authenticated:
+        login_page()
+    else:
+        main_app()
+
+if __name__ == "__main__":
+    main()
