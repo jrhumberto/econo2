@@ -1,4 +1,4 @@
-# econometric_app_corrigido.py
+# econometric_app_final.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -61,6 +61,72 @@ USERS = {
     "professor": "stats101",
     "guest": "guest123"
 }
+
+# Funções auxiliares para análise exploratória
+def interpret_correlation(corr):
+    """Interpreta o valor de correlação"""
+    if pd.isna(corr):
+        return "Indefinido"
+    
+    abs_corr = abs(corr)
+    if abs_corr < 0.3:
+        return "Correlação fraca"
+    elif abs_corr < 0.7:
+        return "Correlação moderada"
+    else:
+        return "Correlação forte"
+
+def get_distribution_shape(series):
+    """Retorna descrição da forma da distribuição"""
+    if len(series.dropna()) == 0:
+        return "Sem dados suficientes"
+    
+    skew = series.skew()
+    kurt = series.kurtosis()
+    
+    shape = ""
+    if abs(skew) < 0.5:
+        shape += "Simétrica"
+    elif skew > 0:
+        shape += "Assimétrica à direita"
+    else:
+        shape += "Assimétrica à esquerda"
+    
+    shape += ", "
+    
+    if kurt > 3.5:
+        shape += "leptocúrtica (caudas pesadas)"
+    elif kurt < 2.5:
+        shape += "platicúrtica (caudas leves)"
+    else:
+        shape += "mesocúrtica (similar à normal)"
+    
+    return shape
+
+def detect_outliers_text(series):
+    """Detecta e descreve outliers"""
+    if len(series.dropna()) == 0:
+        return "Sem dados"
+    
+    Q1 = series.quantile(0.25)
+    Q3 = series.quantile(0.75)
+    IQR = Q3 - Q1
+    
+    if IQR == 0:
+        return "Sem variabilidade suficiente"
+    
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+    
+    outliers = series[(series < lower_bound) | (series > upper_bound)]
+    n_outliers = len(outliers)
+    
+    if n_outliers == 0:
+        return "Nenhum outlier detectado"
+    elif n_outliers == 1:
+        return f"1 outlier ({outliers.iloc[0]:.2f})"
+    else:
+        return f"{n_outliers} outliers (de {outliers.min():.2f} a {outliers.max():.2f})"
 
 # Banco de explicações dos testes
 TEST_EXPLANATIONS = {
@@ -488,32 +554,49 @@ def exploratory_analysis():
             )
             
             if selected_vars:
-                desc_stats = df[selected_vars].describe().T
-                desc_stats['skewness'] = df[selected_vars].skew()
-                desc_stats['kurtosis'] = df[selected_vars].kurtosis()
-                desc_stats['CV'] = desc_stats['std'] / desc_stats['mean']
-                desc_stats['missing'] = df[selected_vars].isnull().sum()
-                
-                st.dataframe(desc_stats.style.format("{:.4f}"), use_container_width=True)
-                
-                with st.expander("📖 Explicação das Estatísticas"):
-                    st.markdown("""
-                    **Média**: Valor médio da variável  
-                    **Desvio Padrão**: Dispersão em torno da média  
-                    **Assimetria (Skewness)**:  
-                    - **> 0**: Distribuição assimétrica à direita  
-                    - **≈ 0**: Distribuição simétrica  
-                    - **< 0**: Distribuição assimétrica à esquerda  
+                try:
+                    desc_stats = df[selected_vars].describe().T
                     
-                    **Curtose (Kurtosis)**:  
-                    - **> 3**: Distribuição leptocúrtica (caudas pesadas)  
-                    - **= 3**: Distribuição normal  
-                    - **< 3**: Distribuição platicúrtica (caudas leves)  
+                    # Adicionar estatísticas adicionais
+                    desc_stats['skewness'] = df[selected_vars].skew()
+                    desc_stats['kurtosis'] = df[selected_vars].kurtosis()
                     
-                    **Coeficiente de Variação (CV)**: Desvio padrão / Média  
-                    - **CV < 1**: Baixa dispersão relativa  
-                    - **CV > 1**: Alta dispersão relativa  
-                    """)
+                    # Calcular CV apenas para variáveis com média não-zero
+                    cv_values = []
+                    for var in selected_vars:
+                        mean_val = desc_stats.loc[var, 'mean']
+                        std_val = desc_stats.loc[var, 'std']
+                        if mean_val != 0:
+                            cv = std_val / mean_val
+                        else:
+                            cv = np.nan
+                        cv_values.append(cv)
+                    
+                    desc_stats['CV'] = cv_values
+                    desc_stats['missing'] = df[selected_vars].isnull().sum()
+                    
+                    st.dataframe(desc_stats.style.format("{:.4f}"), use_container_width=True)
+                    
+                    with st.expander("📖 Explicação das Estatísticas"):
+                        st.markdown("""
+                        **Média**: Valor médio da variável  
+                        **Desvio Padrão**: Dispersão em torno da média  
+                        **Assimetria (Skewness)**:  
+                        - **> 0**: Distribuição assimétrica à direita  
+                        - **≈ 0**: Distribuição simétrica  
+                        - **< 0**: Distribuição assimétrica à esquerda  
+                        
+                        **Curtose (Kurtosis)**:  
+                        - **> 3**: Distribuição leptocúrtica (caudas pesadas)  
+                        - **= 3**: Distribuição normal  
+                        - **< 3**: Distribuição platicúrtica (caudas leves)  
+                        
+                        **Coeficiente de Variação (CV)**: Desvio padrão / Média  
+                        - **CV < 1**: Baixa dispersão relativa  
+                        - **CV > 1**: Alta dispersão relativa  
+                        """)
+                except Exception as e:
+                    st.error(f"❌ Erro ao calcular estatísticas: {e}")
         else:
             st.warning("❌ Nenhuma variável numérica encontrada para análise estatística.")
     
@@ -532,7 +615,12 @@ def exploratory_analysis():
                 x_var = st.selectbox("Variável X:", numeric_cols)
                 
                 if viz_type == "Scatter Plot":
-                    y_var = st.selectbox("Variável Y:", [c for c in numeric_cols if c != x_var])
+                    available_y_vars = [c for c in numeric_cols if c != x_var]
+                    if available_y_vars:
+                        y_var = st.selectbox("Variável Y:", available_y_vars)
+                    else:
+                        y_var = None
+                        st.warning("Não há outra variável numérica disponível para Scatter Plot")
             
             with col_viz2:
                 st.info("""
@@ -543,134 +631,171 @@ def exploratory_analysis():
                 - **Scatter Plot**: Relação entre duas variáveis
                 """)
             
+            # Gerar gráfico
             fig = None
             
-            if viz_type == "Histograma":
-                fig = px.histogram(df, x=x_var, nbins=30, 
-                                  title=f"Distribuição de {x_var}",
-                                  marginal="box")
-                fig.add_vline(x=df[x_var].mean(), line_dash="dash", 
-                            line_color="red", annotation_text="Média")
+            try:
+                if viz_type == "Histograma":
+                    fig = px.histogram(df, x=x_var, nbins=30, 
+                                      title=f"Distribuição de {x_var}",
+                                      marginal="box")
+                    if len(df[x_var].dropna()) > 0:
+                        mean_val = df[x_var].mean()
+                        fig.add_vline(x=mean_val, line_dash="dash", 
+                                    line_color="red", annotation_text="Média")
+                    
+                elif viz_type == "Box Plot":
+                    fig = px.box(df, y=x_var, title=f"Box Plot de {x_var}")
+                    
+                elif viz_type == "Densidade":
+                    data_clean = df[x_var].dropna()
+                    if len(data_clean) > 0:
+                        fig = go.Figure()
+                        fig.add_trace(go.Histogram(
+                            x=data_clean,
+                            histnorm='probability density',
+                            name='Histograma',
+                            opacity=0.7
+                        ))
+                        
+                        # Adicionar curva normal
+                        x_norm = np.linspace(data_clean.min(), data_clean.max(), 100)
+                        y_norm = stats.norm.pdf(x_norm, data_clean.mean(), data_clean.std())
+                        fig.add_trace(go.Scatter(
+                            x=x_norm, y=y_norm,
+                            mode='lines',
+                            name='Distribuição Normal',
+                            line=dict(color='red', width=2)
+                        ))
+                        
+                        fig.update_layout(title=f"Densidade de {x_var}")
+                    
+                elif viz_type == "Scatter Plot" and y_var is not None:
+                    scatter_data = df[[x_var, y_var]].dropna()
+                    if len(scatter_data) > 0:
+                        fig = px.scatter(scatter_data, x=x_var, y=y_var, 
+                                        trendline="ols",
+                                        title=f"{x_var} vs {y_var}")
+                        # Calcular correlação
+                        corr = scatter_data.corr().iloc[0,1]
+                        fig.add_annotation(
+                            text=f"Correlação: {corr:.3f}",
+                            xref="paper", yref="paper",
+                            x=0.05, y=0.95,
+                            showarrow=False,
+                            bgcolor="white"
+                        )
+                    else:
+                        st.warning("Não há dados suficientes para o Scatter Plot")
                 
-            elif viz_type == "Box Plot":
-                fig = px.box(df, y=x_var, title=f"Box Plot de {x_var}")
-                
-            elif viz_type == "Densidade":
-                fig = go.Figure()
-                fig.add_trace(go.Histogram(
-                    x=df[x_var].dropna(),
-                    histnorm='probability density',
-                    name='Histograma',
-                    opacity=0.7
-                ))
-                
-                if len(df[x_var].dropna()) > 0:
-                    x_norm = np.linspace(df[x_var].min(), df[x_var].max(), 100)
-                    y_norm = stats.norm.pdf(x_norm, df[x_var].mean(), df[x_var].std())
-                    fig.add_trace(go.Scatter(
-                        x=x_norm, y=y_norm,
-                        mode='lines',
-                        name='Distribuição Normal',
-                        line=dict(color='red', width=2)
-                    ))
-                
-                fig.update_layout(title=f"Densidade de {x_var}")
-                
-            elif viz_type == "Scatter Plot":
-                fig = px.scatter(df, x=x_var, y=y_var, 
-                                trendline="ols",
-                                title=f"{x_var} vs {y_var}")
-                corr = df[[x_var, y_var]].dropna().corr().iloc[0,1]
-                fig.add_annotation(
-                    text=f"Correlação: {corr:.3f}",
-                    xref="paper", yref="paper",
-                    x=0.05, y=0.95,
-                    showarrow=False,
-                    bgcolor="white"
-                )
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Interpretação do gráfico
+                    with st.expander("📝 Interpretação do Gráfico"):
+                        if viz_type == "Histograma":
+                            st.markdown(f"""
+                            **Análise de {x_var}:**
+                            1. **Forma da Distribuição**: {get_distribution_shape(df[x_var])}
+                            2. **Centro**: A maioria dos valores está em torno de {df[x_var].mean():.2f}
+                            3. **Dispersão**: Os valores variam entre {df[x_var].min():.2f} e {df[x_var].max():.2f}
+                            4. **Outliers**: {detect_outliers_text(df[x_var])}
+                            """)
+                        elif viz_type == "Scatter Plot" and y_var is not None:
+                            if len(df[[x_var, y_var]].dropna()) > 0:
+                                corr = df[[x_var, y_var]].dropna().corr().iloc[0,1]
+                                st.markdown(f"""
+                                **Relação entre {x_var} e {y_var}:**
+                                1. **Correlação**: {corr:.3f} ({interpret_correlation(corr)})
+                                2. **Direção**: {'Positiva' if corr > 0 else 'Negativa' if corr < 0 else 'Nenhuma'}
+                                3. **Força**: {'Forte' if abs(corr) > 0.7 else 'Moderada' if abs(corr) > 0.3 else 'Fraca'}
+                                """)
             
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-                
-                with st.expander("📝 Interpretação do Gráfico"):
-                    if viz_type == "Histograma":
-                        st.markdown(f"""
-                        **Análise de {x_var}:**
-                        1. **Forma da Distribuição**: {"Simétrica" if abs(df[x_var].skew()) < 0.5 else "Assimétrica"}
-                        2. **Centro**: A maioria dos valores está em torno de {df[x_var].mean():.2f}
-                        3. **Dispersão**: Os valores variam entre {df[x_var].min():.2f} e {df[x_var].max():.2f}
-                        """)
-                    elif viz_type == "Scatter Plot":
-                        st.markdown(f"""
-                        **Relação entre {x_var} e {y_var}:**
-                        1. **Correlação**: {corr:.3f} ({"Forte" if abs(corr) > 0.7 else "Moderada" if abs(corr) > 0.3 else "Fraca"})
-                        2. **Direção**: {'Positiva' if corr > 0 else 'Negativa' if corr < 0 else 'Nenhuma'}
-                        """)
+            except Exception as e:
+                st.error(f"❌ Erro ao gerar gráfico: {e}")
     
     with tab_corr:
         st.subheader("Análise de Correlação")
         
         if len(numeric_cols) >= 2:
-            corr_matrix = df[numeric_cols].corr()
-            
-            fig = px.imshow(corr_matrix,
-                          text_auto='.2f',
-                          color_continuous_scale='RdBu',
-                          zmin=-1, zmax=1,
-                          title='Matriz de Correlação',
-                          aspect="auto")
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.subheader("🔍 Detecção de Multicolinearidade")
-            
-            selected_for_vif = st.multiselect(
-                "Selecione variáveis para cálculo de VIF:",
-                numeric_cols,
-                default=numeric_cols[:min(8, len(numeric_cols))]
-            )
-            
-            if len(selected_for_vif) >= 2:
-                try:
-                    X_with_const = sm.add_constant(df[selected_for_vif].dropna())
-                    vif_data = pd.DataFrame()
-                    vif_data["Variável"] = X_with_const.columns
-                    vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
-                                      for i in range(X_with_const.shape[1])]
-                    vif_data["Tolerância"] = 1 / vif_data["VIF"]
-                    
-                    def classify_vif(vif):
-                        if vif > 10:
-                            return "🚨 Severa"
-                        elif vif > 5:
-                            return "⚠️ Moderada"
+            try:
+                # Matriz de correlação
+                corr_matrix = df[numeric_cols].corr()
+                
+                # Heatmap interativo
+                fig = px.imshow(corr_matrix,
+                              text_auto='.2f',
+                              color_continuous_scale='RdBu',
+                              zmin=-1, zmax=1,
+                              title='Matriz de Correlação',
+                              aspect="auto")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Análise de multicolinearidade
+                st.subheader("🔍 Detecção de Multicolinearidade")
+                
+                # Calcular VIF para variáveis selecionadas
+                selected_for_vif = st.multiselect(
+                    "Selecione variáveis para cálculo de VIF:",
+                    numeric_cols,
+                    default=numeric_cols[:min(8, len(numeric_cols))]
+                )
+                
+                if len(selected_for_vif) >= 2:
+                    try:
+                        # Remover valores ausentes
+                        X_clean = df[selected_for_vif].dropna()
+                        if len(X_clean) > 0:
+                            X_with_const = sm.add_constant(X_clean)
+                            vif_data = pd.DataFrame()
+                            vif_data["Variável"] = X_with_const.columns
+                            vif_data["VIF"] = [variance_inflation_factor(X_with_const.values, i) 
+                                              for i in range(X_with_const.shape[1])]
+                            vif_data["Tolerância"] = 1 / vif_data["VIF"]
+                            
+                            # Classificar multicolinearidade
+                            def classify_vif(vif):
+                                if pd.isna(vif):
+                                    return "❌ Erro"
+                                elif vif > 10:
+                                    return "🚨 Severa"
+                                elif vif > 5:
+                                    return "⚠️ Moderada"
+                                else:
+                                    return "✅ Aceitável"
+                            
+                            vif_data["Classificação"] = vif_data["VIF"].apply(classify_vif)
+                            
+                            st.dataframe(vif_data, use_container_width=True)
+                            
+                            # Explicação do VIF
+                            with st.expander("📖 O que é VIF e como interpretar?"):
+                                st.markdown("""
+                                **Fator de Inflação da Variância (VIF)**: Mede quanto a variância de um coeficiente de regressão 
+                                está inflada devido à multicolinearidade.
+                                
+                                **Interpretação**:
+                                - **VIF = 1**: Sem correlação
+                                - **1 < VIF ≤ 5**: Correlação moderada (geralmente aceitável)
+                                - **5 < VIF ≤ 10**: Correlação alta (pode ser problemática)
+                                - **VIF > 10**: Multicolinearidade severa (problema sério)
+                                
+                                **Tolerância**: 1/VIF. Valores abaixo de 0.1 indicam problemas.
+                                
+                                **O que fazer se VIF for alto?**
+                                1. Remover variáveis altamente correlacionadas
+                                2. Usar Análise de Componentes Principais (PCA)
+                                3. Aplicar Regularização (Ridge, Lasso)
+                                4. Coletar mais dados
+                                """)
                         else:
-                            return "✅ Aceitável"
-                    
-                    vif_data["Classificação"] = vif_data["VIF"].apply(classify_vif)
-                    
-                    st.dataframe(vif_data, use_container_width=True)
-                    
-                    with st.expander("📖 O que é VIF e como interpretar?"):
-                        st.markdown("""
-                        **Fator de Inflação da Variância (VIF)**: Mede quanto a variância de um coeficiente de regressão 
-                        está inflada devido à multicolinearidade.
-                        
-                        **Interpretação**:
-                        - **VIF = 1**: Sem correlação
-                        - **1 < VIF ≤ 5**: Correlação moderada (geralmente aceitável)
-                        - **5 < VIF ≤ 10**: Correlação alta (pode ser problemática)
-                        - **VIF > 10**: Multicolinearidade severa (problema sério)
-                        
-                        **Tolerância**: 1/VIF. Valores abaixo de 0.1 indicam problemas.
-                        
-                        **O que fazer se VIF for alto?**
-                        1. Remover variáveis altamente correlacionadas
-                        2. Usar Análise de Componentes Principais (PCA)
-                        3. Aplicar Regularização (Ridge, Lasso)
-                        4. Coletar mais dados
-                        """)
-                except Exception as e:
-                    st.warning(f"Não foi possível calcular VIF: {e}")
+                            st.warning("Não há dados suficientes para calcular VIF após remover valores ausentes.")
+                    except Exception as e:
+                        st.warning(f"Não foi possível calcular VIF: {e}")
+            except Exception as e:
+                st.error(f"❌ Erro na análise de correlação: {e}")
+        else:
+            st.warning("⚠️ É necessário pelo menos 2 variáveis numéricas para análise de correlação.")
 
 def specify_model():
     """Especificação do modelo econométrico"""
@@ -697,14 +822,19 @@ def specify_model():
             help="Esta é a variável que seu modelo tentará prever ou explicar."
         )
         
-        st.info(f"""
-        **Informações sobre {y_var}:**
-        - Média: {df[y_var].mean():.2f}
-        - Desvio Padrão: {df[y_var].std():.2f}
-        - Mínimo: {df[y_var].min():.2f}
-        - Máximo: {df[y_var].max():.2f}
-        - Valores ausentes: {df[y_var].isnull().sum()}
-        """)
+        # Mostrar informações sobre Y
+        y_data = df[y_var].dropna()
+        if len(y_data) > 0:
+            st.info(f"""
+            **Informações sobre {y_var}:**
+            - Média: {y_data.mean():.2f}
+            - Desvio Padrão: {y_data.std():.2f}
+            - Mínimo: {y_data.min():.2f}
+            - Máximo: {y_data.max():.2f}
+            - Valores ausentes: {df[y_var].isnull().sum()}
+            """)
+        else:
+            st.warning(f"⚠️ A variável {y_var} não contém dados numéricos válidos.")
         
         st.subheader("2. Variáveis Independentes (X)")
         x_vars = st.multiselect(
@@ -716,17 +846,24 @@ def specify_model():
         if x_vars:
             st.success(f"✅ {len(x_vars)} variável(s) independente(s) selecionada(s)")
             
+            # Mostrar correlações com Y
             correlations = []
             for x in x_vars:
-                corr = df[[y_var, x]].dropna().corr().iloc[0,1]
-                correlations.append((x, corr))
+                clean_data = df[[y_var, x]].dropna()
+                if len(clean_data) > 0:
+                    try:
+                        corr = clean_data.corr().iloc[0,1]
+                        if not pd.isna(corr):
+                            correlations.append((x, corr))
+                    except:
+                        pass
             
-            correlations.sort(key=lambda x: abs(x[1]), reverse=True)
-            
-            st.write("**Correlação com a variável dependente:**")
-            for var, corr in correlations[:5]:
-                strength = "Forte" if abs(corr) > 0.7 else "Moderada" if abs(corr) > 0.3 else "Fraca"
-                st.write(f"- {var}: {corr:.3f} ({strength})")
+            if correlations:
+                correlations.sort(key=lambda x: abs(x[1]), reverse=True)
+                
+                st.write("**Correlação com a variável dependente:**")
+                for var, corr in correlations[:5]:  # Mostrar apenas top 5
+                    st.write(f"- {var}: {corr:.3f} ({interpret_correlation(corr)})")
     
     with col_spec2:
         st.subheader("3. Tipo de Modelo")
@@ -744,6 +881,7 @@ def specify_model():
             ]
         )
         
+        # Configurações do modelo
         st.subheader("4. Configurações")
         
         confidence_level = st.slider(
@@ -767,6 +905,7 @@ def specify_model():
             help="Ajusta para heterocedasticidade. Recomendado quando não se tem certeza sobre homocedasticidade."
         )
     
+    # Hipóteses do modelo
     with st.expander("📝 Especificar Hipóteses do Modelo", expanded=True):
         col_hyp1, col_hyp2 = st.columns(2)
         
@@ -774,7 +913,7 @@ def specify_model():
             st.subheader("Hipótese Nula (H₀)")
             null_hypothesis = st.text_area(
                 "Hipótese nula principal:",
-                f"Os coeficientes de todas as variáveis independentes são iguais a zero.",
+                "Os coeficientes de todas as variáveis independentes são iguais a zero.",
                 height=100
             )
         
@@ -782,10 +921,11 @@ def specify_model():
             st.subheader("Hipótese Alternativa (H₁)")
             alt_hypothesis = st.text_area(
                 "Hipótese alternativa:",
-                f"Pelo menos um coeficiente das variáveis independentes é diferente de zero.",
+                "Pelo menos um coeficiente das variáveis independentes é diferente de zero.",
                 height=100
             )
     
+    # Tratamento de dados
     with st.expander("🔧 Tratamento de Dados"):
         missing_treatment = st.selectbox(
             "Tratamento de valores ausentes:",
@@ -797,6 +937,7 @@ def specify_model():
             ["Manter todos", "Remover outliers extremos", "Winsorizar (substituir)"]
         )
     
+    # Botão para salvar especificação
     if st.button("💾 Salvar Especificação do Modelo", type="primary"):
         if not x_vars:
             st.error("❌ Selecione pelo menos uma variável independente.")
@@ -819,6 +960,7 @@ def specify_model():
             
             st.success("✅ Especificação do modelo salva com sucesso!")
             
+            # Mostrar resumo
             st.subheader("📋 Resumo da Especificação")
             
             spec = st.session_state.model_spec
@@ -846,6 +988,9 @@ def specify_model():
                 st.write(f"- Outliers: {spec['outlier_treatment']}")
                 
                 st.write(f"\n**Especificado em:** {spec['timestamp']}")
+
+# As funções restantes permanecem as mesmas do código anterior...
+# (run_analysis, perform_econometric_analysis, run_all_diagnostic_tests, etc.)
 
 def run_analysis():
     """Executar análise econométrica completa"""
@@ -921,9 +1066,20 @@ def perform_econometric_analysis():
     df = st.session_state.merged_data.copy()
     spec = st.session_state.model_spec
     
+    # Verificar se as variáveis existem
+    missing_vars = []
+    for var in [spec['y_var']] + spec['x_vars']:
+        if var not in df.columns:
+            missing_vars.append(var)
+    
+    if missing_vars:
+        raise ValueError(f"As seguintes variáveis não existem nos dados: {', '.join(missing_vars)}")
+    
+    # Preparar dados
     y = df[spec['y_var']].copy()
     X = df[spec['x_vars']].copy()
     
+    # Tratamento de valores ausentes
     if "Remover" in spec['missing_treatment']:
         data = pd.concat([y, X], axis=1).dropna()
         y = data[spec['y_var']]
@@ -935,9 +1091,15 @@ def perform_econometric_analysis():
         X = X.fillna(X.median())
         y = y.fillna(y.median())
     
+    # Verificar se ainda temos dados suficientes
+    if len(y) == 0 or len(X) == 0:
+        raise ValueError("Não há dados suficientes após o tratamento de valores ausentes.")
+    
+    # Adicionar constante se necessário
     if spec['include_constant']:
         X = sm.add_constant(X)
     
+    # Ajustar modelo
     if "Linear" in spec['model_type']:
         model = sm.OLS(y, X).fit()
         
@@ -953,11 +1115,14 @@ def perform_econometric_analysis():
     else:
         model = sm.OLS(y, X).fit()
     
+    # Calcular previsões e resíduos
     y_pred = model.predict(X)
     residuals = model.resid
     
+    # Executar testes
     test_results = run_all_diagnostic_tests(model, X, y, residuals)
     
+    # Calcular métricas de performance
     performance = calculate_performance_metrics(y, y_pred, model)
     
     return {
@@ -973,10 +1138,10 @@ def perform_econometric_analysis():
             'n_obs': len(y),
             'n_vars': X.shape[1],
             'y_stats': {
-                'mean': y.mean(),
-                'std': y.std(),
-                'min': y.min(),
-                'max': y.max()
+                'mean': y.mean() if len(y) > 0 else np.nan,
+                'std': y.std() if len(y) > 0 else np.nan,
+                'min': y.min() if len(y) > 0 else np.nan,
+                'max': y.max() if len(y) > 0 else np.nan
             }
         }
     }
@@ -985,34 +1150,40 @@ def run_all_diagnostic_tests(model, X, y, residuals):
     """Executar todos os testes de diagnóstico"""
     results = {}
     
+    # 1. Testes de Normalidade
     results['normality'] = {
         'jarque_bera': perform_jarque_bera(residuals),
         'shapiro_wilk': perform_shapiro_wilk(residuals),
         'anderson_darling': perform_anderson_darling(residuals)
     }
     
+    # 2. Testes de Heterocedasticidade
     results['heteroscedasticity'] = {
         'breusch_pagan': perform_breusch_pagan(model, X, residuals),
         'white_test': perform_white_test(model, X, residuals),
         'goldfeld_quandt': perform_goldfeld_quandt(y, X)
     }
     
+    # 3. Testes de Autocorrelação
     results['autocorrelation'] = {
         'durbin_watson': perform_durbin_watson(residuals),
         'breusch_godfrey': perform_breusch_godfrey(model, X, residuals),
         'ljung_box': perform_ljung_box(residuals)
     }
     
+    # 4. Multicolinearidade
     results['multicollinearity'] = {
         'vif': calculate_vif(X),
         'condition_number': calculate_condition_number(X)
     }
     
+    # 5. Testes de Especificação
     results['specification'] = {
         'ramsey_reset': perform_ramsey_reset(model, X, y),
         'harvey_collier': perform_harvey_collier(model)
     }
     
+    # 6. Estacionariedade (se relevante)
     results['stationarity'] = {
         'adf': perform_adf_test(y),
         'kpss': perform_kpss_test(y)
@@ -1022,34 +1193,52 @@ def run_all_diagnostic_tests(model, X, y, residuals):
 
 def perform_jarque_bera(residuals):
     """Executar teste de Jarque-Bera"""
-    stat, p_value = jarque_bera(residuals)
-    return {
-        'statistic': float(stat),
-        'p_value': float(p_value),
-        'conclusion': 'Normal' if p_value > 0.05 else 'Não normal',
-        'skewness': float(stats.skew(residuals)),
-        'kurtosis': float(stats.kurtosis(residuals))
-    }
+    try:
+        if len(residuals) > 0:
+            stat, p_value = jarque_bera(residuals)
+            return {
+                'statistic': float(stat),
+                'p_value': float(p_value),
+                'conclusion': 'Normal' if p_value > 0.05 else 'Não normal',
+                'skewness': float(stats.skew(residuals)) if len(residuals) > 0 else np.nan,
+                'kurtosis': float(stats.kurtosis(residuals)) if len(residuals) > 0 else np.nan
+            }
+        else:
+            return {'error': 'Sem dados para o teste'}
+    except Exception as e:
+        return {'error': str(e)}
 
 def perform_shapiro_wilk(residuals):
     """Executar teste de Shapiro-Wilk"""
-    if len(residuals) <= 5000:
-        stat, p_value = shapiro(residuals)
-        return {
-            'statistic': float(stat),
-            'p_value': float(p_value),
-            'conclusion': 'Normal' if p_value > 0.05 else 'Não normal'
-        }
-    return {'error': 'Amostra muito grande para Shapiro-Wilk'}
+    try:
+        if len(residuals) <= 5000 and len(residuals) > 3:
+            stat, p_value = shapiro(residuals)
+            return {
+                'statistic': float(stat),
+                'p_value': float(p_value),
+                'conclusion': 'Normal' if p_value > 0.05 else 'Não normal'
+            }
+        elif len(residuals) <= 3:
+            return {'error': 'Amostra muito pequena para Shapiro-Wilk (n ≤ 3)'}
+        else:
+            return {'error': 'Amostra muito grande para Shapiro-Wilk (n > 5000)'}
+    except Exception as e:
+        return {'error': str(e)}
 
 def perform_anderson_darling(residuals):
     """Executar teste de Anderson-Darling"""
-    result = anderson(residuals, dist='norm')
-    return {
-        'statistic': float(result.statistic),
-        'critical_values': result.critical_values.tolist(),
-        'significance_levels': result.significance_level.tolist()
-    }
+    try:
+        if len(residuals) > 0:
+            result = anderson(residuals, dist='norm')
+            return {
+                'statistic': float(result.statistic),
+                'critical_values': result.critical_values.tolist(),
+                'significance_levels': result.significance_level.tolist()
+            }
+        else:
+            return {'error': 'Sem dados para o teste'}
+    except Exception as e:
+        return {'error': str(e)}
 
 def perform_breusch_pagan(model, X, residuals):
     """Executar teste de Breusch-Pagan"""
@@ -1093,19 +1282,25 @@ def perform_goldfeld_quandt(y, X):
 
 def perform_durbin_watson(residuals):
     """Calcular estatística de Durbin-Watson"""
-    stat = durbin_watson(residuals)
-    
-    if stat < 1.5:
-        interpretation = "Autocorrelação positiva"
-    elif stat > 2.5:
-        interpretation = "Autocorrelação negativa"
-    else:
-        interpretation = "Sem autocorrelação significativa"
-    
-    return {
-        'statistic': float(stat),
-        'interpretation': interpretation
-    }
+    try:
+        if len(residuals) > 0:
+            stat = durbin_watson(residuals)
+            
+            if stat < 1.5:
+                interpretation = "Autocorrelação positiva"
+            elif stat > 2.5:
+                interpretation = "Autocorrelação negativa"
+            else:
+                interpretation = "Sem autocorrelação significativa"
+            
+            return {
+                'statistic': float(stat),
+                'interpretation': interpretation
+            }
+        else:
+            return {'error': 'Sem dados para o teste'}
+    except Exception as e:
+        return {'error': str(e)}
 
 def perform_breusch_godfrey(model, X, residuals):
     """Executar teste de Breusch-Godfrey"""
@@ -1123,12 +1318,15 @@ def perform_ljung_box(residuals):
     """Executar teste de Ljung-Box"""
     try:
         from statsmodels.stats.diagnostic import acorr_ljungbox
-        result = acorr_ljungbox(residuals, lags=[5], return_df=True)
-        return {
-            'statistic': float(result['lb_stat'].iloc[0]),
-            'p_value': float(result['lb_pvalue'].iloc[0]),
-            'conclusion': 'Sem autocorrelação' if result['lb_pvalue'].iloc[0] > 0.05 else 'Com autocorrelação'
-        }
+        if len(residuals) > 0:
+            result = acorr_ljungbox(residuals, lags=[5], return_df=True)
+            return {
+                'statistic': float(result['lb_stat'].iloc[0]),
+                'p_value': float(result['lb_pvalue'].iloc[0]),
+                'conclusion': 'Sem autocorrelação' if result['lb_pvalue'].iloc[0] > 0.05 else 'Com autocorrelação'
+            }
+        else:
+            return {'error': 'Sem dados para o teste'}
     except Exception as e:
         return {'error': str(e)}
 
@@ -1137,21 +1335,24 @@ def calculate_vif(X):
     try:
         vif_data = []
         for i, col in enumerate(X.columns):
-            if col != 'const':
+            if col != 'const':  # Ignorar constante
                 vif = variance_inflation_factor(X.values, i)
                 tolerance = 1 / vif if vif != 0 else float('inf')
                 
-                if vif > 10:
-                    classification = "Multicolinearidade severa"
+                # Classificação
+                if pd.isna(vif):
+                    classification = "❌ Erro no cálculo"
+                elif vif > 10:
+                    classification = "🚨 Multicolinearidade severa"
                 elif vif > 5:
-                    classification = "Multicolinearidade moderada"
+                    classification = "⚠️ Multicolinearidade moderada"
                 else:
-                    classification = "Aceitável"
+                    classification = "✅ Aceitável"
                 
                 vif_data.append({
                     'variable': col,
-                    'vif': float(vif),
-                    'tolerance': float(tolerance),
+                    'vif': float(vif) if not pd.isna(vif) else np.nan,
+                    'tolerance': float(tolerance) if not pd.isna(vif) else np.nan,
                     'classification': classification
                 })
         
@@ -1163,19 +1364,22 @@ def calculate_condition_number(X):
     """Calcular número de condição da matriz X"""
     try:
         X_matrix = X.values if hasattr(X, 'values') else X
-        cond_num = np.linalg.cond(X_matrix)
-        
-        if cond_num > 1000:
-            interpretation = "Multicolinearidade severa"
-        elif cond_num > 100:
-            interpretation = "Multicolinearidade moderada"
+        if X_matrix.shape[0] > 0 and X_matrix.shape[1] > 0:
+            cond_num = np.linalg.cond(X_matrix)
+            
+            if cond_num > 1000:
+                interpretation = "Multicolinearidade severa"
+            elif cond_num > 100:
+                interpretation = "Multicolinearidade moderada"
+            else:
+                interpretation = "Aceitável"
+            
+            return {
+                'condition_number': float(cond_num),
+                'interpretation': interpretation
+            }
         else:
-            interpretation = "Aceitável"
-        
-        return {
-            'condition_number': float(cond_num),
-            'interpretation': interpretation
-        }
+            return {'error': 'Matriz X vazia'}
     except Exception as e:
         return {'error': str(e)}
 
@@ -1221,64 +1425,76 @@ def perform_harvey_collier(model):
 def perform_adf_test(y):
     """Executar teste ADF"""
     try:
-        result = adfuller(y.dropna())
-        return {
-            'adf_statistic': float(result[0]),
-            'p_value': float(result[1]),
-            'critical_values': {k: float(v) for k, v in result[4].items()},
-            'conclusion': 'Estacionária' if result[1] < 0.05 else 'Não estacionária'
-        }
+        y_clean = y.dropna()
+        if len(y_clean) > 0:
+            result = adfuller(y_clean)
+            return {
+                'adf_statistic': float(result[0]),
+                'p_value': float(result[1]),
+                'critical_values': {k: float(v) for k, v in result[4].items()},
+                'conclusion': 'Estacionária' if result[1] < 0.05 else 'Não estacionária'
+            }
+        else:
+            return {'error': 'Sem dados para o teste'}
     except Exception as e:
         return {'error': str(e)}
 
 def perform_kpss_test(y):
     """Executar teste KPSS"""
     try:
-        result = kpss(y.dropna(), regression='c')
-        return {
-            'kpss_statistic': float(result[0]),
-            'p_value': float(result[1]),
-            'critical_values': {k: float(v) for k, v in result[3].items()},
-            'conclusion': 'Estacionária' if result[1] > 0.05 else 'Não estacionária'
-        }
+        y_clean = y.dropna()
+        if len(y_clean) > 0:
+            result = kpss(y_clean, regression='c')
+            return {
+                'kpss_statistic': float(result[0]),
+                'p_value': float(result[1]),
+                'critical_values': {k: float(v) for k, v in result[3].items()},
+                'conclusion': 'Estacionária' if result[1] > 0.05 else 'Não estacionária'
+            }
+        else:
+            return {'error': 'Sem dados para o teste'}
     except Exception as e:
         return {'error': str(e)}
 
 def calculate_performance_metrics(y, y_pred, model):
     """Calcular métricas de performance"""
-    errors = y - y_pred
-    
-    mae = np.mean(np.abs(errors))
-    rmse = np.sqrt(np.mean(errors ** 2))
-    
-    if (y != 0).all():
-        mape = np.mean(np.abs(errors / y)) * 100
-    else:
-        mape = np.nan
-    
-    r_squared = model.rsquared if hasattr(model, 'rsquared') else None
-    r_squared_adj = model.rsquared_adj if hasattr(model, 'rsquared_adj') else None
-    
-    aic = model.aic if hasattr(model, 'aic') else None
-    bic = model.bic if hasattr(model, 'bic') else None
-    
-    llf = model.llf if hasattr(model, 'llf') else None
-    
-    return {
-        'mae': float(mae),
-        'rmse': float(rmse),
-        'mape': float(mape) if not np.isnan(mape) else None,
-        'r_squared': float(r_squared) if r_squared else None,
-        'r_squared_adj': float(r_squared_adj) if r_squared_adj else None,
-        'aic': float(aic) if aic else None,
-        'bic': float(bic) if bic else None,
-        'log_likelihood': float(llf) if llf else None
-    }
+    try:
+        errors = y - y_pred
+        
+        mae = np.mean(np.abs(errors))
+        rmse = np.sqrt(np.mean(errors ** 2))
+        
+        if (y != 0).all():
+            mape = np.mean(np.abs(errors / y)) * 100
+        else:
+            mape = np.nan
+        
+        r_squared = model.rsquared if hasattr(model, 'rsquared') else None
+        r_squared_adj = model.rsquared_adj if hasattr(model, 'rsquared_adj') else None
+        
+        aic = model.aic if hasattr(model, 'aic') else None
+        bic = model.bic if hasattr(model, 'bic') else None
+        
+        llf = model.llf if hasattr(model, 'llf') else None
+        
+        return {
+            'mae': float(mae),
+            'rmse': float(rmse),
+            'mape': float(mape) if not np.isnan(mape) else None,
+            'r_squared': float(r_squared) if r_squared else None,
+            'r_squared_adj': float(r_squared_adj) if r_squared_adj else None,
+            'aic': float(aic) if aic else None,
+            'bic': float(bic) if bic else None,
+            'log_likelihood': float(llf) if llf else None
+        }
+    except Exception as e:
+        return {'error': str(e)}
 
 def generate_explanations(results):
     """Gerar explicações para os resultados"""
     explanations = {}
     
+    # Explicação geral do modelo
     explanations['model_summary'] = {
         'title': 'Resumo do Modelo',
         'content': f"""
@@ -1293,6 +1509,7 @@ def generate_explanations(results):
         """
     }
     
+    # Explicação dos coeficientes
     significant_vars = []
     for var in results['model'].params.index:
         if var != 'const':
@@ -1313,6 +1530,7 @@ def generate_explanations(results):
         """
     }
     
+    # Explicação dos testes
     test_explanations = []
     for category, tests in results['test_results'].items():
         for test_name, test_result in tests.items():
@@ -1322,7 +1540,7 @@ def generate_explanations(results):
                     'test': explanation['name'],
                     'result': test_result['conclusion'],
                     'interpretation': explanation['economic_meaning'],
-                    'recommendation': explanation['solutions'] if test_result['conclusion'] not in ['Normal', 'Homocedástico', 'Sem autocorrelação', 'Aceitável'] else 'Nenhuma ação necessária'
+                    'recommendation': explanation['solutions'] if test_result['conclusion'] not in ['Normal', 'Homocedástico', 'Sem autocorrelação', 'Aceitável', 'Bem especificado', 'Linear'] else 'Nenhuma ação necessária'
                 })
     
     explanations['tests'] = {
@@ -1343,6 +1561,7 @@ def display_results():
     
     st.header("📊 Resultados da Análise Econométrica")
     
+    # Criar abas para diferentes seções
     tab_summary, tab_model, tab_diagnostics, tab_visuals, tab_export = st.tabs([
         "📋 Resumo Executivo", 
         "⚙️ Resultados do Modelo", 
@@ -1373,19 +1592,25 @@ def display_executive_summary(results):
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("R²", f"{results['performance']['r_squared']:.4f}")
-        st.metric("R² Ajustado", f"{results['performance']['r_squared_adj']:.4f}")
+        if results['performance']['r_squared'] is not None:
+            st.metric("R²", f"{results['performance']['r_squared']:.4f}")
+        if results['performance']['r_squared_adj'] is not None:
+            st.metric("R² Ajustado", f"{results['performance']['r_squared_adj']:.4f}")
     
     with col2:
         st.metric("Observações", f"{results['data_info']['n_obs']:,}")
         st.metric("Variáveis", results['data_info']['n_vars'])
     
     with col3:
-        st.metric("RMSE", f"{results['performance']['rmse']:.4f}")
-        st.metric("MAE", f"{results['performance']['mae']:.4f}")
+        if results['performance']['rmse'] is not None:
+            st.metric("RMSE", f"{results['performance']['rmse']:.4f}")
+        if results['performance']['mae'] is not None:
+            st.metric("MAE", f"{results['performance']['mae']:.4f}")
     
+    # Conclusão geral
     st.subheader("📝 Conclusão Geral")
     
+    # Verificar significância do modelo
     model_significant = results['model'].f_pvalue < 0.05
     
     if model_significant:
@@ -1408,8 +1633,10 @@ def display_executive_summary(results):
         4. Coletar mais dados se possível
         """)
     
+    # Principais achados
     st.subheader("🔍 Principais Achados")
     
+    # Encontrar variáveis mais significativas
     sig_coeffs = []
     for var in results['specification']['x_vars']:
         if var in results['model'].pvalues.index:
@@ -1423,7 +1650,7 @@ def display_executive_summary(results):
     if sig_coeffs:
         st.write("**Variáveis com efeito estatisticamente significativo:**")
         
-        for var, coeff, pval in sig_coeffs[:3]:
+        for var, coeff, pval in sig_coeffs[:3]:  # Top 3
             direction = "positivo" if coeff > 0 else "negativo"
             significance = "altamente significativo" if pval < 0.01 else "significativo" if pval < 0.05 else "marginalmente significativo"
             
@@ -1436,12 +1663,15 @@ def display_executive_summary(results):
     else:
         st.info("Nenhuma variável mostrou efeito estatisticamente significativo ao nível de 5%.")
     
+    # Recomendações
     st.subheader("💡 Recomendações Práticas")
     
     recommendations = []
     
+    # Verificar problemas de diagnóstico
     diag_issues = []
     
+    # Normalidade
     if 'normality' in results['test_results']:
         for test_name, test_result in results['test_results']['normality'].items():
             if isinstance(test_result, dict) and 'conclusion' in test_result:
@@ -1449,6 +1679,7 @@ def display_executive_summary(results):
                     diag_issues.append("normalidade dos resíduos")
                     break
     
+    # Heterocedasticidade
     if 'heteroscedasticity' in results['test_results']:
         for test_name, test_result in results['test_results']['heteroscedasticity'].items():
             if isinstance(test_result, dict) and 'conclusion' in test_result:
@@ -1456,6 +1687,7 @@ def display_executive_summary(results):
                     diag_issues.append("heterocedasticidade")
                     break
     
+    # Autocorrelação
     if 'autocorrelation' in results['test_results']:
         for test_name, test_result in results['test_results']['autocorrelation'].items():
             if isinstance(test_result, dict) and 'conclusion' in test_result:
@@ -1463,18 +1695,19 @@ def display_executive_summary(results):
                     diag_issues.append("autocorrelação")
                     break
     
+    # Multicolinearidade
     if 'multicollinearity' in results['test_results']:
         vif_results = results['test_results']['multicollinearity'].get('vif', [])
         if isinstance(vif_results, list):
-            high_vif = any(isinstance(item, dict) and item.get('classification', '').startswith('Multicolinearidade') 
+            high_vif = any(isinstance(item, dict) and item.get('classification', '').startswith('🚨') 
                           for item in vif_results)
             if high_vif:
-                diag_issues.append("multicolinearidade")
+                diag_issues.append("multicolinearidade severa")
     
     if diag_issues:
         recommendations.append(f"**Problemas detectados:** {', '.join(diag_issues)}. Considere usar métodos robustos ou corrigir especificação.")
     
-    if results['performance']['r_squared'] < 0.3:
+    if results['performance']['r_squared'] is not None and results['performance']['r_squared'] < 0.3:
         recommendations.append("**Poder explicativo baixo:** O R² é inferior a 0.3, indicando que o modelo explica menos de 30% da variação. Considere incluir variáveis adicionais.")
     
     if not sig_coeffs and model_significant:
@@ -1490,6 +1723,7 @@ def display_model_results(results):
     """Exibir resultados detalhados do modelo"""
     st.subheader("📈 Resultados do Modelo")
     
+    # Tabela de coeficientes com formatação
     coef_df = pd.DataFrame({
         'Coeficiente': results['model'].params,
         'Erro Padrão': results['model'].bse,
@@ -1499,6 +1733,7 @@ def display_model_results(results):
         '0.975]': results['model'].conf_int()[1]
     })
     
+    # Formatar p-valores
     def format_pvalue(p):
         if p < 0.001:
             return "0.000***"
@@ -1513,33 +1748,42 @@ def display_model_results(results):
     
     coef_df['P>|t|'] = coef_df['P>|t|'].apply(format_pvalue)
     
+    # Aplicar formatação numérica
     numeric_cols = ['Coeficiente', 'Erro Padrão', 't', '[0.025', '0.975]']
     for col in numeric_cols:
         coef_df[col] = coef_df[col].apply(lambda x: f"{x:.4f}")
     
     st.dataframe(coef_df, use_container_width=True)
     
+    # Legenda de significância
     st.caption("""
     *** p<0.001, ** p<0.01, * p<0.05, . p<0.1
     """)
     
+    # Métricas do modelo
     st.subheader("📊 Métricas de Ajuste")
     
     col_met1, col_met2, col_met3 = st.columns(3)
     
     with col_met1:
-        st.metric("R-squared", f"{results['performance']['r_squared']:.4f}")
-        st.metric("Adj. R-squared", f"{results['performance']['r_squared_adj']:.4f}")
+        if results['performance']['r_squared'] is not None:
+            st.metric("R-squared", f"{results['performance']['r_squared']:.4f}")
+        if results['performance']['r_squared_adj'] is not None:
+            st.metric("Adj. R-squared", f"{results['performance']['r_squared_adj']:.4f}")
     
     with col_met2:
         st.metric("F-statistic", f"{results['model'].fvalue:.2f}")
         st.metric("Prob (F-statistic)", f"{results['model'].f_pvalue:.4f}")
     
     with col_met3:
-        st.metric("Log-Likelihood", f"{results['performance']['log_likelihood']:.2f}")
-        st.metric("AIC", f"{results['performance']['aic']:.2f}")
-        st.metric("BIC", f"{results['performance']['bic']:.2f}")
+        if results['performance']['log_likelihood'] is not None:
+            st.metric("Log-Likelihood", f"{results['performance']['log_likelihood']:.2f}")
+        if results['performance']['aic'] is not None:
+            st.metric("AIC", f"{results['performance']['aic']:.2f}")
+        if results['performance']['bic'] is not None:
+            st.metric("BIC", f"{results['performance']['bic']:.2f}")
     
+    # Explicação das métricas
     with st.expander("📖 Explicação das Métricas"):
         st.markdown("""
         **R-squared (R²):** Proporção da variância da variável dependente que é explicada pelas variáveis independentes.
@@ -1557,7 +1801,7 @@ def display_model_results(results):
         - **Regra:** Menor valor indica melhor modelo.
         - **Diferença:** BIC penaliza mais a complexidade que AIC.
         
-        **Log-Likelihood:** Medida da probabilidade dos dados dado o modelo.
+        **Log-Likelihood:** Mede a probabilidade dos dados dado o modelo.
         - **Interpretação:** Valores mais altos indicam melhor ajuste.
         """)
 
@@ -1565,6 +1809,7 @@ def display_diagnostic_tests(results):
     """Exibir resultados dos testes de diagnóstico"""
     st.subheader("🔍 Testes de Diagnóstico")
     
+    # Organizar por categoria
     categories = {
         'Normalidade dos Resíduos': results['test_results'].get('normality', {}),
         'Heterocedasticidade': results['test_results'].get('heteroscedasticity', {}),
@@ -1579,6 +1824,7 @@ def display_diagnostic_tests(results):
             if tests:
                 for test_name, test_result in tests.items():
                     if isinstance(test_result, dict):
+                        # Obter explicação do teste
                         explanation = get_test_explanation(test_name)
                         
                         col_test1, col_test2 = st.columns([3, 1])
@@ -1588,6 +1834,7 @@ def display_diagnostic_tests(results):
                             st.write(f"*Propósito:* {explanation['purpose']}")
                             st.write(f"*H₀:* {explanation['null_hypothesis']}")
                             
+                            # Mostrar resultados
                             if 'error' in test_result:
                                 st.error(f"Erro: {test_result['error']}")
                             else:
@@ -1608,13 +1855,14 @@ def display_diagnostic_tests(results):
                         with col_test2:
                             if 'conclusion' in test_result:
                                 conclusion = test_result['conclusion']
-                                if any(x in conclusion.lower() for x in ['normal', 'homocedástico', 'sem', 'aceitável', 'bem']):
+                                if any(x in conclusion.lower() for x in ['normal', 'homocedástico', 'sem', 'aceitável', 'bem', 'linear']):
                                     st.success(f"✅ {conclusion}")
                                 else:
                                     st.error(f"❌ {conclusion}")
                             
+                            # Mostrar solução se houver problema
                             if 'conclusion' in test_result and 'solutions' in explanation:
-                                if any(x in test_result['conclusion'].lower() for x in ['não normal', 'heterocedástico', 'autocorrelação', 'multicolinearidade', 'mal']):
+                                if any(x in test_result['conclusion'].lower() for x in ['não normal', 'heterocedástico', 'autocorrelação', 'multicolinearidade', 'mal', 'não linear']):
                                     with st.expander("💡 Recomendações"):
                                         st.write(explanation['solutions'])
                         
@@ -1662,6 +1910,7 @@ def display_visualizations(results):
         
         st.plotly_chart(fig, use_container_width=True)
         
+        # Explicação
         with st.expander("📖 Interpretação do Gráfico"):
             st.markdown("""
             **Gráfico de Resíduos vs Ajustados:**
@@ -1677,9 +1926,15 @@ def display_visualizations(results):
             - **Forma de funil:** Heterocedasticidade (variância não constante)
             - **Padrão curvilíneo:** Especificação incorreta (falta termos não-lineares)
             - **Agrupamentos:** Possível variável omitida ou estrutura de grupos
+            
+            **No gráfico acima:**
+            - A linha vermelha tracejada representa resíduo zero
+            - Pontos acima da linha: subestimação (valor real > predito)
+            - Pontos abaixo da linha: superestimação (valor real < predito)
             """)
     
     elif viz_type == "QQ-Plot dos Resíduos":
+        # QQ-Plot
         sorted_residuals = np.sort(results['residuals'])
         theoretical_quantiles = stats.norm.ppf(
             np.linspace(0.01, 0.99, len(sorted_residuals))
@@ -1694,6 +1949,7 @@ def display_visualizations(results):
             marker=dict(size=8)
         ))
         
+        # Linha de referência (y = x)
         min_val = min(theoretical_quantiles.min(), sorted_residuals.min())
         max_val = max(theoretical_quantiles.max(), sorted_residuals.max())
         fig.add_trace(go.Scatter(
@@ -1713,6 +1969,7 @@ def display_visualizations(results):
         
         st.plotly_chart(fig, use_container_width=True)
         
+        # Explicação
         with st.expander("📖 Interpretação do Gráfico"):
             st.markdown("""
             **QQ-Plot (Quantil-Quantil):**
@@ -1726,9 +1983,14 @@ def display_visualizations(results):
             - **Curva em S:** Assimetria (skewness) nos resíduos
             - **Curva em U:** Curtose excessiva (caudas pesadas)
             
+            **O que observar:**
+            1. **Linearidade:** Pontos devem seguir aproximadamente a linha reta
+            2. **Extremos:** Desvios nas extremidades indicam outliers ou caudas pesadas
+            3. **Padrão sistemático:** Curvatura indica não-normalidade
+            
             **Implicações para inferência:**
             - Normalidade dos resíduos é necessária para testes t e F válidos
-            - Desvios moderados são toleráveis em amostras grandes
+            - Desvios moderados são toleráveis em amostras grandes (Teorema do Limite Central)
             - Desvios graves podem exigir transformações ou métodos robustos
             """)
     
@@ -1738,6 +2000,7 @@ def display_visualizations(results):
             subplot_titles=('Histograma dos Resíduos', 'Densidade dos Resíduos')
         )
         
+        # Histograma
         fig.add_trace(
             go.Histogram(
                 x=results['residuals'],
@@ -1749,20 +2012,23 @@ def display_visualizations(results):
             row=1, col=1
         )
         
-        x_norm = np.linspace(results['residuals'].min(), results['residuals'].max(), 100)
-        y_norm = stats.norm.pdf(x_norm, results['residuals'].mean(), results['residuals'].std())
+        # Adicionar curva normal
+        if len(results['residuals']) > 0:
+            x_norm = np.linspace(results['residuals'].min(), results['residuals'].max(), 100)
+            y_norm = stats.norm.pdf(x_norm, results['residuals'].mean(), results['residuals'].std())
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=x_norm,
+                    y=y_norm * len(results['residuals']) * (results['residuals'].ptp() / 30),
+                    mode='lines',
+                    name='Normal',
+                    line=dict(color='red', width=2)
+                ),
+                row=1, col=1
+            )
         
-        fig.add_trace(
-            go.Scatter(
-                x=x_norm,
-                y=y_norm * len(results['residuals']) * (results['residuals'].ptp() / 30),
-                mode='lines',
-                name='Normal',
-                line=dict(color='red', width=2)
-            ),
-            row=1, col=1
-        )
-        
+        # Densidade
         fig.add_trace(
             go.Histogram(
                 x=results['residuals'],
@@ -1775,16 +2041,17 @@ def display_visualizations(results):
             row=1, col=2
         )
         
-        fig.add_trace(
-            go.Scatter(
-                x=x_norm,
-                y=y_norm,
-                mode='lines',
-                name='Normal',
-                line=dict(color='red', width=2)
-            ),
-            row=1, col=2
-        )
+        if len(results['residuals']) > 0:
+            fig.add_trace(
+                go.Scatter(
+                    x=x_norm,
+                    y=y_norm,
+                    mode='lines',
+                    name='Normal',
+                    line=dict(color='red', width=2)
+                ),
+                row=1, col=2
+            )
         
         fig.update_layout(
             title='Distribuição dos Resíduos',
@@ -1804,6 +2071,7 @@ def display_visualizations(results):
             marker=dict(size=8, opacity=0.6)
         ))
         
+        # Linha y = x (prefeito ajuste)
         min_val = min(results['y'].min(), results['y_pred'].min())
         max_val = max(results['y'].max(), results['y_pred'].max())
         fig.add_trace(go.Scatter(
@@ -1821,18 +2089,21 @@ def display_visualizations(results):
             template='plotly_white'
         )
         
+        # Calcular R² para exibir
         r2 = results['performance']['r_squared']
-        fig.add_annotation(
-            text=f"R² = {r2:.4f}",
-            xref="paper", yref="paper",
-            x=0.05, y=0.95,
-            showarrow=False,
-            bgcolor="white"
-        )
+        if r2 is not None:
+            fig.add_annotation(
+                text=f"R² = {r2:.4f}",
+                xref="paper", yref="paper",
+                x=0.05, y=0.95,
+                showarrow=False,
+                bgcolor="white"
+            )
         
         st.plotly_chart(fig, use_container_width=True)
     
     elif viz_type == "Importância das Variáveis":
+        # Calcular importância baseada em estatísticas t
         importance_data = []
         for var in results['specification']['x_vars']:
             if var in results['model'].tvalues.index:
@@ -1860,6 +2131,8 @@ def display_visualizations(results):
             )
             
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Não foi possível calcular a importância das variáveis.")
 
 def display_export_options(results):
     """Exibir opções de exportação"""
@@ -1878,6 +2151,7 @@ def display_export_options(results):
                 with open(pdf_path, "rb") as f:
                     pdf_bytes = f.read()
                 
+                # Botão de download
                 st.download_button(
                     label="⬇️ Baixar Relatório PDF",
                     data=pdf_bytes,
@@ -1894,6 +2168,7 @@ def display_export_options(results):
     with col_exp2:
         st.markdown("### 📊 Dados e Resultados")
         
+        # Exportar coeficientes
         coef_df = pd.DataFrame({
             'Variável': results['model'].params.index,
             'Coeficiente': results['model'].params.values,
@@ -1913,6 +2188,7 @@ def display_export_options(results):
             use_container_width=True
         )
         
+        # Exportar dados de previsão
         pred_df = pd.DataFrame({
             'Y_Real': results['y'],
             'Y_Predito': results['y_pred'],
@@ -1931,6 +2207,7 @@ def display_export_options(results):
     with col_exp3:
         st.markdown("### 📋 Relatório Textual")
         
+        # Gerar relatório textual
         report_text = generate_text_report(results)
         
         st.download_button(
@@ -1941,6 +2218,7 @@ def display_export_options(results):
             use_container_width=True
         )
         
+        # Exportar dados processados
         st.markdown("---")
         st.markdown("### 💾 Dados Processados")
         
@@ -1957,18 +2235,22 @@ def display_export_options(results):
 
 def generate_pdf_report(results):
     """Gerar relatório PDF completo"""
+    # Criar PDF
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     
+    # Título
     pdf.cell(0, 10, "Relatório de Análise Econométrica", ln=True, align='C')
     pdf.ln(5)
     
+    # Informações gerais
     pdf.set_font("Arial", "", 12)
     pdf.cell(0, 10, f"Data de geração: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", ln=True)
     pdf.cell(0, 10, f"Usuário: {st.session_state.current_user}", ln=True)
     pdf.ln(10)
     
+    # Seção 1: Especificação do Modelo
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, "1. Especificação do Modelo", ln=True)
     pdf.set_font("Arial", "", 12)
@@ -1980,20 +2262,25 @@ def generate_pdf_report(results):
     pdf.cell(0, 10, f"Nível de confiança: {spec['confidence_level']*100}%", ln=True)
     pdf.ln(5)
     
+    # Seção 2: Resultados do Modelo
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, "2. Resultados do Modelo", ln=True)
     pdf.set_font("Arial", "", 12)
     
+    # Coeficientes (formato simplificado)
     pdf.cell(0, 10, "Coeficientes:", ln=True)
     pdf.set_font("Arial", "", 10)
     
+    # Criar tabela de coeficientes
     col_widths = [40, 20, 20, 20, 20, 20, 20]
     headers = ['Variável', 'Coef', 'Std.Err.', 't', 'P>|t|', 'IC 95% Inf', 'IC 95% Sup']
     
+    # Cabeçalho
     for i, header in enumerate(headers):
         pdf.cell(col_widths[i], 10, header, border=1)
     pdf.ln()
     
+    # Dados
     for i, var in enumerate(results['model'].params.index):
         pdf.cell(col_widths[0], 10, str(var), border=1)
         pdf.cell(col_widths[1], 10, f"{results['model'].params[var]:.4f}", border=1)
@@ -2007,6 +2294,7 @@ def generate_pdf_report(results):
     pdf.ln(5)
     pdf.set_font("Arial", "", 12)
     
+    # Métricas
     perf = results['performance']
     pdf.cell(0, 10, f"R-squared: {perf['r_squared']:.4f}", ln=True)
     pdf.cell(0, 10, f"R-squared ajustado: {perf['r_squared_adj']:.4f}", ln=True)
@@ -2016,10 +2304,13 @@ def generate_pdf_report(results):
     pdf.cell(0, 10, f"Log-likelihood: {perf['log_likelihood']:.2f}", ln=True)
     pdf.ln(5)
     
+    # Seção 3: Testes de Diagnóstico
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, "3. Testes de Diagnóstico", ln=True)
     pdf.set_font("Arial", "", 12)
     
+    # Resumo dos testes
+    test_summary = []
     for category_name, tests in results['test_results'].items():
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, category_name + ":", ln=True)
@@ -2034,16 +2325,21 @@ def generate_pdf_report(results):
     
     pdf.ln(10)
     
+    # Seção 4: Recomendações
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, "4. Recomendações e Conclusões", ln=True)
     pdf.set_font("Arial", "", 12)
     
+    # Análise de significância
     if results['model'].f_pvalue < 0.05:
         pdf.cell(0, 10, "✅ O modelo é estatisticamente significativo como um todo.", ln=True)
     else:
         pdf.cell(0, 10, "⚠️ O modelo não é estatisticamente significativo como um todo.", ln=True)
     
+    # Verificar problemas
     issues = []
+    
+    # Normalidade
     norm_tests = results['test_results'].get('normality', {})
     for test_name, test_result in norm_tests.items():
         if isinstance(test_result, dict) and 'conclusion' in test_result:
@@ -2051,6 +2347,7 @@ def generate_pdf_report(results):
                 issues.append("Normalidade dos resíduos")
                 break
     
+    # Heterocedasticidade
     het_tests = results['test_results'].get('heteroscedasticity', {})
     for test_name, test_result in het_tests.items():
         if isinstance(test_result, dict) and 'conclusion' in test_result:
@@ -2066,11 +2363,13 @@ def generate_pdf_report(results):
     else:
         pdf.cell(0, 10, "✅ Nenhum problema grave detectado nos testes de diagnóstico.", ln=True)
     
+    # Interpretação econômica
     pdf.ln(5)
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, "Interpretação Econômica:", ln=True)
     pdf.set_font("Arial", "", 12)
     
+    # Encontrar variável mais significativa
     max_t = 0
     most_sig_var = None
     for var in results['specification']['x_vars']:
@@ -2086,6 +2385,7 @@ def generate_pdf_report(results):
         pdf.cell(0, 10, f"A variável mais influente é {most_sig_var} com um efeito {direction}.", ln=True)
         pdf.cell(0, 10, f"Um aumento de uma unidade em {most_sig_var} está associado a uma mudança de {abs(coef):.4f} em {spec['y_var']}.", ln=True)
     
+    # Salvar PDF
     temp_dir = tempfile.gettempdir()
     pdf_path = os.path.join(temp_dir, f"relatorio_econometrico_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
     pdf.output(pdf_path)
@@ -2102,6 +2402,7 @@ def generate_text_report(results):
     report.append(f"Usuário: {st.session_state.current_user}")
     report.append("")
     
+    # 1. Especificação
     spec = results['specification']
     report.append("1. ESPECIFICAÇÃO DO MODELO")
     report.append("-" * 40)
@@ -2113,6 +2414,7 @@ def generate_text_report(results):
     report.append(f"Hipótese alternativa (H₁): {spec['hypotheses']['alternative']}")
     report.append("")
     
+    # 2. Resultados
     report.append("2. RESULTADOS DO MODELO")
     report.append("-" * 40)
     report.append(f"Número de observações: {results['data_info']['n_obs']}")
@@ -2144,6 +2446,7 @@ def generate_text_report(results):
         report.append(f"    IC 95%: [{ci_low:.4f}, {ci_high:.4f}]")
         report.append("")
     
+    # Métricas
     perf = results['performance']
     report.append("Métricas de ajuste:")
     report.append("-" * 20)
@@ -2151,15 +2454,19 @@ def generate_text_report(results):
     report.append(f"R-squared ajustado: {perf['r_squared_adj']:.4f}")
     report.append(f"F-statistic: {results['model'].fvalue:.2f}")
     report.append(f"Prob(F-statistic): {results['model'].f_pvalue:.4f}")
-    report.append(f"AIC: {perf['aic']:.2f}")
-    report.append(f"BIC: {perf['bic']:.2f}")
-    report.append(f"Log-likelihood: {perf['log_likelihood']:.2f}")
+    if perf['aic'] is not None:
+        report.append(f"AIC: {perf['aic']:.2f}")
+    if perf['bic'] is not None:
+        report.append(f"BIC: {perf['bic']:.2f}")
+    if perf['log_likelihood'] is not None:
+        report.append(f"Log-likelihood: {perf['log_likelihood']:.2f}")
     report.append(f"MAE: {perf['mae']:.4f}")
     report.append(f"RMSE: {perf['rmse']:.4f}")
-    if perf['mape']:
+    if perf['mape'] is not None:
         report.append(f"MAPE: {perf['mape']:.2f}%")
     report.append("")
     
+    # 3. Testes de diagnóstico
     report.append("3. TESTES DE DIAGNÓSTICO")
     report.append("-" * 40)
     
@@ -2182,14 +2489,17 @@ def generate_text_report(results):
                             else:
                                 report.append(f"    {key}: {value}")
     
+    # 4. Conclusões
     report.append("\n4. CONCLUSÕES E RECOMENDAÇÕES")
     report.append("-" * 40)
     
+    # Significância do modelo
     if results['model'].f_pvalue < 0.05:
         report.append("✅ O modelo é estatisticamente significativo como um todo.")
     else:
         report.append("⚠️ O modelo não é estatisticamente significativo como um todo.")
     
+    # Variáveis significativas
     sig_vars = []
     for var in spec['x_vars']:
         if var in results['model'].pvalues.index:
@@ -2205,6 +2515,7 @@ def generate_text_report(results):
     else:
         report.append("\n⚠️ Nenhuma variável independente é estatisticamente significativa ao nível de 5%.")
     
+    # Problemas detectados
     issues = []
     for category_name, tests in results['test_results'].items():
         for test_name, test_result in tests.items():
@@ -2229,6 +2540,7 @@ def generate_text_report(results):
 
 def main_app():
     """Aplicação principal após login"""
+    # Barra lateral
     st.sidebar.title(f"👋 Bem-vindo, {st.session_state.current_user}!")
     
     if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -2243,6 +2555,7 @@ def main_app():
     
     st.sidebar.markdown("---")
     
+    # Menu de navegação
     menu_options = [
         "📤 Upload de Dados",
         "🔄 Merge de Arquivos",
@@ -2254,6 +2567,7 @@ def main_app():
     
     selected_menu = st.sidebar.radio("Navegação", menu_options)
     
+    # Status atual
     st.sidebar.markdown("---")
     st.sidebar.subheader("📊 Status Atual")
     
@@ -2269,8 +2583,10 @@ def main_app():
     if st.session_state.analysis_results:
         st.sidebar.success(f"📈 Análise: Concluída")
         r2 = st.session_state.analysis_results['performance']['r_squared']
-        st.sidebar.metric("R²", f"{r2:.3f}")
+        if r2 is not None:
+            st.sidebar.metric("R²", f"{r2:.3f}")
     
+    # Executar página selecionada
     if selected_menu == "📤 Upload de Dados":
         upload_files()
     elif selected_menu == "🔄 Merge de Arquivos":
