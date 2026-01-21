@@ -556,13 +556,8 @@ def exploratory_analysis():
             st.write(f"- **Valores Ausentes:** {df.isnull().sum().sum():,}")
         
         with col_info2:
-            # Obter a contagem de tipos de dados, convertendo os tipos para string
-            dtype_counts = df.dtypes.astype(str).value_counts()
-            dtype_df = pd.DataFrame(dtype_counts).reset_index()
+            dtype_df = pd.DataFrame(df.dtypes.value_counts()).reset_index()
             dtype_df.columns = ['Tipo', 'Quantidade']
-            
-            # Garantir que os valores são números inteiros
-            dtype_df['Quantidade'] = dtype_df['Quantidade'].astype(int)
             
             fig = px.pie(dtype_df, values='Quantidade', names='Tipo', 
                         title='Distribuição de Tipos de Dados',
@@ -1299,13 +1294,14 @@ def perform_jarque_bera(residuals):
     """Executar teste de Jarque-Bera"""
     try:
         if len(residuals) > 0:
-            stat, p_value = jarque_bera(residuals)
+            # CORREÇÃO: jarque_bera retorna 4 valores, não 2
+            jb_value, p_value, skewness, kurtosis = jarque_bera(residuals)
             return {
-                'statistic': float(stat),
+                'statistic': float(jb_value),
                 'p_value': float(p_value),
                 'conclusion': 'Normal' if p_value > 0.05 else 'Não normal',
-                'skewness': float(stats.skew(residuals)) if len(residuals) > 0 else np.nan,
-                'kurtosis': float(stats.kurtosis(residuals)) if len(residuals) > 0 else np.nan
+                'skewness': float(skewness) if len(residuals) > 0 else np.nan,
+                'kurtosis': float(kurtosis) if len(residuals) > 0 else np.nan
             }
         else:
             return {'error': 'Sem dados para o teste'}
@@ -1375,7 +1371,8 @@ def perform_white_test(model, X, residuals):
 def perform_goldfeld_quandt(y, X):
     """Executar teste de Goldfeld-Quandt"""
     try:
-        stat, p_value = het_goldfeldquandt(y, X)
+        # CORREÇÃO: het_goldfeldquandt retorna 3 valores, não 2
+        stat, p_value, order = het_goldfeldquandt(y, X)
         return {
             'statistic': float(stat),
             'p_value': float(p_value),
@@ -1445,13 +1442,13 @@ def calculate_vif(X):
                 
                 # Classificação
                 if pd.isna(vif):
-                    classification = "❌ Erro no cálculo"
+                    classification = "Erro no cálculo"
                 elif vif > 10:
-                    classification = "🚨 Multicolinearidade severa"
+                    classification = "Multicolinearidade severa"
                 elif vif > 5:
-                    classification = "⚠️ Multicolinearidade moderada"
+                    classification = "Multicolinearidade moderada"
                 else:
-                    classification = "✅ Aceitável"
+                    classification = "Aceitável"
                 
                 vif_data.append({
                     'variable': col,
@@ -2129,7 +2126,7 @@ def display_visualizations(results):
                     name='Normal',
                     line=dict(color='red', width=2)
                 ),
-            row=1, col=1
+                row=1, col=1
             )
         
         # Densidade
@@ -2238,6 +2235,223 @@ def display_visualizations(results):
         else:
             st.info("Não foi possível calcular a importância das variáveis.")
 
+def clean_text_for_pdf(text):
+    """Remove caracteres Unicode que não podem ser codificados em latin-1"""
+    if not isinstance(text, str):
+        return str(text)
+    
+    # Lista de caracteres problemáticos comuns e seus substitutos
+    replacements = {
+        '✅': '[OK]',
+        '⚠️': '[WARNING]',
+        '❌': '[ERROR]',
+        '🚨': '[ALERT]',
+        '📊': '[CHART]',
+        '📈': '[GRAPH]',
+        '📋': '[LIST]',
+        '🔍': '[SEARCH]',
+        '⚙️': '[SETTINGS]',
+        '🔬': '[ANALYSIS]',
+        '📝': '[NOTE]',
+        '💡': '[IDEA]',
+        '📖': '[BOOK]',
+        '📄': '[DOCUMENT]',
+        '👁️': '[VIEW]',
+        '🔄': '[REFRESH]',
+        '🤖': '[BOT]',
+        '🔗': '[LINK]',
+        '📤': '[UPLOAD]',
+        '📥': '[DOWNLOAD]',
+        '🗃️': '[ARCHIVE]',
+        '🔮': '[PREDICTION]',
+        '🎯': '[TARGET]',
+        '👤': '[USER]',
+        '🔒': '[LOCK]',
+        '🚀': '[ROCKET]',
+        'ℹ️': '[INFO]',
+        '✨': '[SPARKLE]',
+        '🔧': '[TOOL]',
+        '💾': '[SAVE]',
+        '🔑': '[KEY]',
+        '📌': '[PIN]',
+        '📍': '[LOCATION]',
+        '⏰': '[TIME]',
+        '💰': '[MONEY]',
+        '📅': '[CALENDAR]',
+        '📁': '[FOLDER]',
+        '📎': '[CLIP]',
+        '✏️': '[PENCIL]',
+        '🗑️': '[TRASH]',
+        '🔔': '[BELL]',
+        '📢': '[ANNOUNCEMENT]',
+        '📱': '[PHONE]',
+        '💻': '[LAPTOP]',
+        '🖨️': '[PRINTER]',
+        '📡': '[SATELLITE]',
+        '🔋': '[BATTERY]',
+        '📶': '[SIGNAL]',
+        '🌐': '[GLOBE]',
+        '💬': '[CHAT]',
+        '📞': '[TELEPHONE]',
+        '📩': '[EMAIL]',
+        '📤': '[SEND]',
+        '📨': '[RECEIVE]',
+        '📬': '[MAILBOX]',
+        '📭': '[MAILBOX OPEN]',
+        '🏠': '[HOME]',
+        '🏢': '[BUILDING]',
+        '🏭': '[FACTORY]',
+        '🏪': '[STORE]',
+        '🏫': '[SCHOOL]',
+        '🏥': '[HOSPITAL]',
+        '🏦': '[BANK]',
+        '✈️': '[AIRPLANE]',
+        '🚗': '[CAR]',
+        '🚂': '[TRAIN]',
+        '🚲': '[BIKE]',
+        '⛽': '[FUEL]',
+        '🎓': '[GRADUATION]',
+        '💼': '[BRIEFCASE]',
+        '🛒': '[SHOPPING]',
+        '🍎': '[APPLE]',
+        '🍊': '[ORANGE]',
+        '🍌': '[BANANA]',
+        '🍇': '[GRAPES]',
+        '🍓': '[STRAWBERRY]',
+        '🍉': '[WATERMELON]',
+        '🥑': '[AVOCADO]',
+        '🥦': '[BROCCOLI]',
+        '🥕': '[CARROT]',
+        '🌽': '[CORN]',
+        '🍞': '[BREAD]',
+        '🥐': '[CROISSANT]',
+        '🥞': '[PANCAKE]',
+        '🍳': '[COOKING]',
+        '☕': '[COFFEE]',
+        '🍵': '[TEA]',
+        '🥤': '[DRINK]',
+        '🍺': '[BEER]',
+        '🍷': '[WINE]',
+        '🍸': '[COCKTAIL]',
+        '🍹': '[TROPICAL]',
+        '🍾': '[CHAMPAGNE]',
+        '🎂': '[CAKE]',
+        '🍪': '[COOKIE]',
+        '🍫': '[CHOCOLATE]',
+        '🍬': '[CANDY]',
+        '🍭': '[LOLLIPOP]',
+        '🎁': '[GIFT]',
+        '🎄': '[CHRISTMAS]',
+        '🎃': '[HALLOWEEN]',
+        '🎉': '[PARTY]',
+        '🎊': '[CONFETTI]',
+        '🎈': '[BALLOON]',
+        '🎀': '[RIBBON]',
+        '🎎': '[DOLLS]',
+        '🎐': '[WINDCHIME]',
+        '🎌': '[FLAGS]',
+        '🏮': '[LANTERN]',
+        '💝': '[HEART BOX]',
+        '💘': '[HEART ARROW]',
+        '💖': '[SPARKLING HEART]',
+        '💗': '[GROWING HEART]',
+        '💓': '[BEATING HEART]',
+        '💞': '[REVOLVING HEARTS]',
+        '💕': '[TWO HEARTS]',
+        '💟': '[HEART DECORATION]',
+        '❣️': '[HEART EXCLAMATION]',
+        '💔': '[BROKEN HEART]',
+        '❤️': '[RED HEART]',
+        '🧡': '[ORANGE HEART]',
+        '💛': '[YELLOW HEART]',
+        '💚': '[GREEN HEART]',
+        '💙': '[BLUE HEART]',
+        '💜': '[PURPLE HEART]',
+        '🖤': '[BLACK HEART]',
+        '🤍': '[WHITE HEART]',
+        '🤎': '[BROWN HEART]',
+        '💯': '[100 POINTS]',
+        '🔟': '[KEYCAP 10]',
+        '🔢': '[INPUT NUMBERS]',
+        '#️⃣': '[HASHTAG]',
+        '*️⃣': '[ASTERISK]',
+        '0️⃣': '[KEYCAP 0]',
+        '1️⃣': '[KEYCAP 1]',
+        '2️⃣': '[KEYCAP 2]',
+        '3️⃣': '[KEYCAP 3]',
+        '4️⃣': '[KEYCAP 4]',
+        '5️⃣': '[KEYCAP 5]',
+        '6️⃣': '[KEYCAP 6]',
+        '7️⃣': '[KEYCAP 7]',
+        '8️⃣': '[KEYCAP 8]',
+        '9️⃣': '[KEYCAP 9]',
+        '🔠': '[INPUT LATIN UPPERCASE]',
+        '🔡': '[INPUT LATIN LOWERCASE]',
+        '🔤': '[INPUT LATIN LETTERS]',
+        '🆎': '[AB BUTTON]',
+        '🆑': '[CL BUTTON]',
+        '🆒': '[COOL BUTTON]',
+        '🆓': '[FREE BUTTON]',
+        'ℹ️': '[INFORMATION]',
+        '🆔': '[ID BUTTON]',
+        '🆕': '[NEW BUTTON]',
+        '🆖': '[NG BUTTON]',
+        '🆗': '[OK BUTTON]',
+        '🆘': '[SOS BUTTON]',
+        '🆙': '[UP! BUTTON]',
+        '🆚': '[VS BUTTON]',
+        '🈁': '[JAPANESE HERE BUTTON]',
+        '🈂️': '[JAPANESE SERVICE CHARGE BUTTON]',
+        '🈷️': '[JAPANESE MONTHLY AMOUNT BUTTON]',
+        '🈶': '[JAPANESE NOT FREE OF CHARGE BUTTON]',
+        '🈯': '[JAPANESE RESERVED BUTTON]',
+        '🉐': '[JAPANESE BARGAIN BUTTON]',
+        '🈹': '[JAPANESE DISCOUNT BUTTON]',
+        '🈚': '[JAPANESE FREE OF CHARGE BUTTON]',
+        '🈲': '[JAPANESE PROHIBITED BUTTON]',
+        '🉑': '[JAPANESE ACCEPTABLE BUTTON]',
+        '🈸': '[JAPANESE APPLICATION BUTTON]',
+        '🈴': '[JAPANESE PASSING GRADE BUTTON]',
+        '🈳': '[JAPANESE VACANCY BUTTON]',
+        '㊗️': '[JAPANESE CONGRATULATIONS BUTTON]',
+        '㊙️': '[JAPANESE SECRET BUTTON]',
+        '🈺': '[JAPANESE OPEN FOR BUSINESS BUTTON]',
+        '🈵': '[JAPANESE NO VACANCY BUTTON]',
+        '▪️': '[BLACK SMALL SQUARE]',
+        '▫️': '[WHITE SMALL SQUARE]',
+        '◾': '[BLACK MEDIUM SMALL SQUARE]',
+        '◽': '[WHITE MEDIUM SMALL SQUARE]',
+        '⬛': '[BLACK LARGE SQUARE]',
+        '⬜': '[WHITE LARGE SQUARE]',
+        '🔶': '[LARGE ORANGE DIAMOND]',
+        '🔷': '[LARGE BLUE DIAMOND]',
+        '🔸': '[SMALL ORANGE DIAMOND]',
+        '🔹': '[SMALL BLUE DIAMOND]',
+        '🔺': '[RED TRIANGLE POINTED UP]',
+        '🔻': '[RED TRIANGLE POINTED DOWN]',
+        '💠': '[DIAMOND WITH A DOT]',
+        '🔘': '[RADIO BUTTON]',
+        '🔳': '[WHITE SQUARE BUTTON]',
+        '🔲': '[BLACK SQUARE BUTTON]',
+        '🏁': '[CHEQUERED FLAG]',
+        '🚩': '[TRIANGULAR FLAG]',
+        '🎌': '[CROSSED FLAGS]',
+        '🏴': '[BLACK FLAG]',
+        '🏳️': '[WHITE FLAG]',
+        '🏳️‍🌈': '[RAINBOW FLAG]',
+        '🏴‍☠️': '[PIRATE FLAG]',
+        '🇦🇨': '[ASCENSION ISLAND]',
+        '🇦🇩': '[ANDORRA]',
+        '🇦🇪': '[UNITED ARAB EMIRATES]',
+        '🇦🇫': '[AFGHANISTAN]',
+    }
+    
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    # Remover outros caracteres não-ASCII
+    return ''.join(char for char in text if ord(char) < 128 or char in 'áàãâéèêíìîóòõôúùûçÁÀÃÂÉÈÊÍÌÎÓÒÕÔÚÙÛÇ')
+
 def display_export_options(results):
     """Exibir opções de exportação"""
     st.subheader("📥 Exportar Resultados")
@@ -2268,6 +2482,8 @@ def display_export_options(results):
                 
             except Exception as e:
                 st.error(f"❌ Erro ao gerar PDF: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
     
     with col_exp2:
         st.markdown("### 📊 Dados e Resultados")
@@ -2350,8 +2566,8 @@ def generate_pdf_report(results):
     
     # Informações gerais
     pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Data de geração: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", ln=True)
-    pdf.cell(0, 10, f"Usuário: {st.session_state.current_user}", ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Data de geração: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Usuário: {st.session_state.current_user}"), ln=True)
     pdf.ln(10)
     
     # Seção 1: Especificação do Modelo
@@ -2360,12 +2576,12 @@ def generate_pdf_report(results):
     pdf.set_font("Arial", "", 12)
     
     spec = results['specification']
-    pdf.cell(0, 10, f"Variável dependente (Y): {spec['y_var']}", ln=True)
-    pdf.cell(0, 10, f"Variáveis independentes (X): {', '.join(spec['x_vars'])}", ln=True)
-    pdf.cell(0, 10, f"Tipo de modelo: {spec['model_type']}", ln=True)
-    pdf.cell(0, 10, f"Nível de confiança: {spec['confidence_level']*100}%", ln=True)
-    pdf.cell(0, 10, f"Hipótese nula (H₀): {spec['hypotheses']['null']}", ln=True)
-    pdf.cell(0, 10, f"Hipótese alternativa (H₁): {spec['hypotheses']['alternative']}", ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Variável dependente (Y): {spec['y_var']}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Variáveis independentes (X): {', '.join(spec['x_vars'])}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Tipo de modelo: {spec['model_type']}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Nível de confiança: {spec['confidence_level']*100}%"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Hipótese nula (H₀): {spec['hypotheses']['null']}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Hipótese alternativa (H₁): {spec['hypotheses']['alternative']}"), ln=True)
     pdf.ln(5)
     
     # Seção 2: Resultados do Modelo
@@ -2388,13 +2604,13 @@ def generate_pdf_report(results):
     
     # Dados
     for i, var in enumerate(results['model'].params.index):
-        pdf.cell(col_widths[0], 10, str(var), border=1)
-        pdf.cell(col_widths[1], 10, f"{results['model'].params[var]:.4f}", border=1)
-        pdf.cell(col_widths[2], 10, f"{results['model'].bse[var]:.4f}", border=1)
-        pdf.cell(col_widths[3], 10, f"{results['model'].tvalues[var]:.4f}", border=1)
-        pdf.cell(col_widths[4], 10, f"{results['model'].pvalues[var]:.4f}", border=1)
-        pdf.cell(col_widths[5], 10, f"{results['model'].conf_int()[0][var]:.4f}", border=1)
-        pdf.cell(col_widths[6], 10, f"{results['model'].conf_int()[1][var]:.4f}", border=1)
+        pdf.cell(col_widths[0], 10, clean_text_for_pdf(str(var)), border=1)
+        pdf.cell(col_widths[1], 10, clean_text_for_pdf(f"{results['model'].params[var]:.4f}"), border=1)
+        pdf.cell(col_widths[2], 10, clean_text_for_pdf(f"{results['model'].bse[var]:.4f}"), border=1)
+        pdf.cell(col_widths[3], 10, clean_text_for_pdf(f"{results['model'].tvalues[var]:.4f}"), border=1)
+        pdf.cell(col_widths[4], 10, clean_text_for_pdf(f"{results['model'].pvalues[var]:.4f}"), border=1)
+        pdf.cell(col_widths[5], 10, clean_text_for_pdf(f"{results['model'].conf_int()[0][var]:.4f}"), border=1)
+        pdf.cell(col_widths[6], 10, clean_text_for_pdf(f"{results['model'].conf_int()[1][var]:.4f}"), border=1)
         pdf.ln()
     
     pdf.ln(5)
@@ -2402,12 +2618,12 @@ def generate_pdf_report(results):
     
     # Métricas
     perf = results['performance']
-    pdf.cell(0, 10, f"R-squared: {perf['r_squared']:.4f}", ln=True)
-    pdf.cell(0, 10, f"R-squared ajustado: {perf['r_squared_adj']:.4f}", ln=True)
-    pdf.cell(0, 10, f"F-statistic: {results['model'].fvalue:.2f} (p = {results['model'].f_pvalue:.4f})", ln=True)
-    pdf.cell(0, 10, f"AIC: {perf['aic']:.2f}", ln=True)
-    pdf.cell(0, 10, f"BIC: {perf['bic']:.2f}", ln=True)
-    pdf.cell(0, 10, f"Log-likelihood: {perf['log_likelihood']:.2f}", ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"R-squared: {perf['r_squared']:.4f}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"R-squared ajustado: {perf['r_squared_adj']:.4f}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"F-statistic: {results['model'].fvalue:.2f} (p = {results['model'].f_pvalue:.4f})"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"AIC: {perf['aic']:.2f}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"BIC: {perf['bic']:.2f}"), ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf(f"Log-likelihood: {perf['log_likelihood']:.2f}"), ln=True)
     pdf.ln(5)
     
     # Seção 3: Testes de Diagnóstico
@@ -2419,7 +2635,7 @@ def generate_pdf_report(results):
     test_summary = []
     for category_name, tests in results['test_results'].items():
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, category_name + ":", ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf(category_name + ":"), ln=True)
         pdf.set_font("Arial", "", 10)
         
         for test_name, test_result in tests.items():
@@ -2427,7 +2643,7 @@ def generate_pdf_report(results):
                 explanation = get_test_explanation(test_name)
                 conclusion = test_result.get('conclusion', 'N/A')
                 
-                pdf.cell(0, 10, f"  {explanation['name']}: {conclusion}", ln=True)
+                pdf.cell(0, 10, clean_text_for_pdf(f"  {explanation['name']}: {conclusion}"), ln=True)
     
     pdf.ln(10)
     
@@ -2438,9 +2654,9 @@ def generate_pdf_report(results):
     
     # Análise de significância
     if results['model'].f_pvalue < 0.05:
-        pdf.cell(0, 10, "✅ O modelo é estatisticamente significativo como um todo.", ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf("O modelo é estatisticamente significativo como um todo."), ln=True)
     else:
-        pdf.cell(0, 10, "⚠️ O modelo não é estatisticamente significativo como um todo.", ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf("O modelo não é estatisticamente significativo como um todo."), ln=True)
     
     # Verificar problemas
     issues = []
@@ -2462,17 +2678,17 @@ def generate_pdf_report(results):
                 break
     
     if issues:
-        pdf.cell(0, 10, "Problemas detectados:", ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf("Problemas detectados:"), ln=True)
         for issue in issues:
-            pdf.cell(0, 10, f"  • {issue}", ln=True)
-        pdf.cell(0, 10, "Recomenda-se usar métodos robustos ou corrigir a especificação.", ln=True)
+            pdf.cell(0, 10, clean_text_for_pdf(f"  • {issue}"), ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf("Recomenda-se usar métodos robustos ou corrigir a especificação."), ln=True)
     else:
-        pdf.cell(0, 10, "✅ Nenhum problema grave detectado nos testes de diagnóstico.", ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf("Nenhum problema grave detectado nos testes de diagnóstico."), ln=True)
     
     # Interpretação econômica
     pdf.ln(5)
     pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "Interpretação Econômica:", ln=True)
+    pdf.cell(0, 10, clean_text_for_pdf("Interpretação Econômica:"), ln=True)
     pdf.set_font("Arial", "", 12)
     
     # Encontrar variável mais significativa
@@ -2488,8 +2704,8 @@ def generate_pdf_report(results):
     if most_sig_var:
         coef = results['model'].params[most_sig_var]
         direction = "positivo" if coef > 0 else "negativo"
-        pdf.cell(0, 10, f"A variável mais influente é {most_sig_var} com um efeito {direction}.", ln=True)
-        pdf.cell(0, 10, f"Um aumento de uma unidade em {most_sig_var} está associado a uma mudança de {abs(coef):.4f} em {spec['y_var']}.", ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf(f"A variável mais influente é {most_sig_var} com um efeito {direction}."), ln=True)
+        pdf.cell(0, 10, clean_text_for_pdf(f"Um aumento de uma unidade em {most_sig_var} está associado a uma mudança de {abs(coef):.4f} em {spec['y_var']}."), ln=True)
     
     # Salvar PDF
     temp_dir = tempfile.gettempdir()
@@ -2601,9 +2817,9 @@ def generate_text_report(results):
     
     # Significância do modelo
     if results['model'].f_pvalue < 0.05:
-        report.append("✅ O modelo é estatisticamente significativo como um todo.")
+        report.append("O modelo é estatisticamente significativo como um todo.")
     else:
-        report.append("⚠️ O modelo não é estatisticamente significativo como um todo.")
+        report.append("O modelo não é estatisticamente significativo como um todo.")
     
     # Variáveis significativas
     sig_vars = []
@@ -2619,7 +2835,7 @@ def generate_text_report(results):
             direction = "positivo" if coef > 0 else "negativo"
             report.append(f"  • {var}: efeito {direction} (coeficiente = {coef:.4f})")
     else:
-        report.append("\n⚠️ Nenhuma variável independente é estatisticamente significativa ao nível de 5%.")
+        report.append("\nNenhuma variável independente é estatisticamente significativa ao nível de 5%.")
     
     # Problemas detectados
     issues = []
@@ -2631,14 +2847,14 @@ def generate_text_report(results):
                     issues.append(explanation['name'])
     
     if issues:
-        report.append(f"\n⚠️ Problemas detectados: {', '.join(issues)}")
+        report.append(f"\nProblemas detectados: {', '.join(issues)}")
         report.append("Recomenda-se considerar as seguintes ações:")
         report.append("  1. Usar erros padrão robustos para heterocedasticidade")
         report.append("  2. Transformar variáveis para normalidade")
         report.append("  3. Adicionar termos não-lineares para má especificação")
         report.append("  4. Remover variáveis correlacionadas para multicolinearidade")
     else:
-        report.append("\n✅ Nenhum problema grave detectado nos testes de diagnóstico.")
+        report.append("\nNenhum problema grave detectado nos testes de diagnóstico.")
     
     report.append("\n" + "=" * 80)
     
@@ -2663,58 +2879,4 @@ def main_app():
     
     # Menu de navegação
     menu_options = [
-        "📤 Upload de Dados",
-        "🔄 Merge de Arquivos",
-        "🔍 Análise Exploratória",
-        "⚙️ Especificar Modelo",
-        "🔬 Executar Análise",
-        "📊 Resultados"
-    ]
-    
-    selected_menu = st.sidebar.radio("Navegação", menu_options)
-    
-    # Status atual
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("📊 Status Atual")
-    
-    if st.session_state.merged_data is not None:
-        st.sidebar.success(f"✅ Dados: {st.session_state.merged_data.shape[0]:,}×{st.session_state.merged_data.shape[1]}")
-    else:
-        st.sidebar.warning("⚠️ Sem dados")
-    
-    if st.session_state.model_spec:
-        st.sidebar.info(f"⚙️ Modelo: {st.session_state.model_spec.get('model_type', 'Não especificado')}")
-        st.sidebar.write(f"Y: {st.session_state.model_spec.get('y_var', '—')}")
-    
-    if st.session_state.analysis_results:
-        st.sidebar.success(f"📈 Análise: Concluída")
-        r2 = st.session_state.analysis_results['performance']['r_squared']
-        if r2 is not None:
-            st.sidebar.metric("R²", f"{r2:.3f}")
-    
-    # Executar página selecionada
-    if selected_menu == "📤 Upload de Dados":
-        upload_files()
-    elif selected_menu == "🔄 Merge de Arquivos":
-        merge_files()
-    elif selected_menu == "🔍 Análise Exploratória":
-        exploratory_analysis()
-    elif selected_menu == "⚙️ Especificar Modelo":
-        specify_model()
-    elif selected_menu == "🔬 Executar Análise":
-        run_analysis()
-    elif selected_menu == "📊 Resultados":
-        if st.session_state.analysis_results:
-            display_results()
-        else:
-            st.info("👈 Execute a análise primeiro para ver os resultados.")
-
-def main():
-    """Função principal"""
-    if not st.session_state.authenticated:
-        login_page()
-    else:
-        main_app()
-
-if __name__ == "__main__":
-    main()
+        "📤 Upload
